@@ -98,6 +98,38 @@ restart; the refresh token is used to mint new access tokens automatically. The
 browser holds only an opaque, httpOnly session cookie that is matched against
 the stored session. `data/` and `tokens.json` are git-ignored.
 
+### Deploying to Heroku
+
+The repo ships a `Procfile` (`web: npm start`) and an `app.json`. Heroku's Node
+buildpack installs dependencies, runs `npm run build` (tsc → `build/`)
+automatically, and starts the process from the `Procfile`; the Node version is
+pinned by `engines.node` in `package.json`.
+
+```sh
+heroku git:remote -a reflector-prod          # point this repo at your app
+heroku config:set \
+  OAUTH_CLIENT_ID=... \
+  OAUTH_CLIENT_SECRET=... \
+  BASE_URL=https://reflector-prod.herokuapp.com   # your app's real URL
+git push heroku main                          # build + release
+```
+
+In the [Google Cloud console](https://console.cloud.google.com/) add
+`${BASE_URL}/auth/callback` as an authorized redirect URI on the OAuth client
+(e.g. `https://reflector-prod.herokuapp.com/auth/callback`). `PORT` is injected
+by Heroku and read automatically; `OAUTH_REDIRECT_URI` defaults to
+`${BASE_URL}/auth/callback`, so setting `BASE_URL` is enough.
+
+> **Heads up — ephemeral disk.** A Heroku dyno's filesystem is wiped on every
+> restart and deploy, so `DATA_DIR` (`data/`) and `TOKEN_STORE_PATH`
+> (`tokens.json`) do **not** persist: you'll re-run the Google OAuth flow, and a
+> local-files calendar copy is lost, after each redeploy or the daily dyno
+> cycle. This app is single-user and file-backed, which suits a persistent host
+> (a VM/Droplet with a real disk) better than a dyno. For durable calendar data
+> on Heroku, connect a
+> [remoteStorage](#storage-local-files-or-remotestorage) account so records live
+> off-dyno — though the Google tokens still land on the ephemeral disk.
+
 ## Storage: local files or remoteStorage
 
 By default the local-first copy is written to `DATA_DIR` as one JSON file per
