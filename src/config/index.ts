@@ -21,10 +21,20 @@ export interface ZipperConfig {
     tokenEndpoint: string;
     userInfoEndpoint: string;
   };
-  /** Directory the local-first JSON copy is written under. This is what the ZIP download packages. */
+  /** Directory the local-first JSON copy is written under (used when storage is local files). */
   dataDir: string;
   /** File the connected account's OAuth tokens are persisted to (survives restarts). */
   tokenStorePath: string;
+  remoteStorage: {
+    /** File a connected remoteStorage account is persisted to (survives restarts). */
+    storePath: string;
+    /** The storage module (top-level directory) Zipper reads and writes, e.g. `zipper`. */
+    module: string;
+    /** OAuth `client_id` presented to the remoteStorage provider (the app's origin). */
+    clientId: string;
+    /** OAuth `redirect_uri` the implicit-grant token is returned to. */
+    redirectUri: string;
+  };
   /** Absolute path to the vendored Google Calendar OpenAPI document. */
   openApiPath: string;
   /** Directory holding the localthought/overlays Calendar overlays. */
@@ -85,6 +95,23 @@ export function loadConfig(): ZipperConfig {
         resolve(env('DATA_DIR', resolve(repoRoot, 'data')), 'tokens.json'),
       ),
     ),
+    remoteStorage: {
+      storePath: resolve(
+        env(
+          'REMOTESTORAGE_STORE_PATH',
+          resolve(
+            env('DATA_DIR', resolve(repoRoot, 'data')),
+            'remotestorage.json',
+          ),
+        ),
+      ),
+      module: env('REMOTESTORAGE_MODULE', 'zipper'),
+      clientId: env('REMOTESTORAGE_CLIENT_ID', baseUrl),
+      redirectUri: env(
+        'REMOTESTORAGE_REDIRECT_URI',
+        `${baseUrl}/remotestorage/callback`,
+      ),
+    },
     openApiPath: resolve(
       env(
         'OPENAPI_PATH',
