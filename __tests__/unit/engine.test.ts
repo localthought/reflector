@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadConfig, type ZipperConfig } from '../../src/config/index.js';
-import { TokenManager } from '../../src/google/authed-fetch.js';
-import type { GoogleTokens } from '../../src/google/oauth.js';
-import { buildCalendarDocument } from '../../src/sync/document.js';
-import { SyncEngine, generateEventId } from '../../src/sync/engine.js';
+import { TokenManager } from '../../src/oauth/authed-fetch.js';
+import { deriveAuthProfile, type OAuthTokens } from '../../src/oauth/oauth.js';
+import { buildDocument } from '../../src/sync/document.js';
+import { SyncEngine, type FullReadSummary } from '../../src/sync/engine.js';
 
 const cwd = process.cwd();
 
@@ -41,6 +41,22 @@ function makeGoogleMock(): GoogleMock {
           { id: 'broken', summary: 'Broken' },
         ],
       });
+    }
+
+    // Top-level, read-only settings collection — part of the generic walk.
+    if (path === '/users/me/settings') {
+      return json({
+        items: [
+          { id: 'timezone', value: 'Europe/Amsterdam' },
+          { id: 'locale', value: 'en' },
+        ],
+        nextSyncToken: 'SYNC',
+      });
+    }
+
+    // Nested acl collection (empty here) — exercises a second nested collection.
+    if (/^\/calendars\/([^/]+)\/acl$/.test(path)) {
+      return json({ items: [], nextSyncToken: 'SYNC' });
     }
 
     const listMatch = /^\/calendars\/([^/]+)\/events$/.exec(path);
@@ -90,6 +106,12 @@ function makeGoogleMock(): GoogleMock {
   return { fetchImpl, events };
 }
 
+function countOf(summary: FullReadSummary, collection: string): number {
+  return summary.collections
+    .filter((c) => c.collection === collection)
+    .reduce((sum, c) => sum + c.count, 0);
+}
+
 async function makeEngine(dataDir: string, mockFetch: typeof fetch): Promise<SyncEngine> {
   const base = loadConfig();
   const config: ZipperConfig = {
@@ -99,13 +121,14 @@ async function makeEngine(dataDir: string, mockFetch: typeof fetch): Promise<Syn
     overlayDir: join(cwd, 'spec/overlays'),
     retry: { baseDelayMs: 5, maxDelayMs: 10, maxAttempts: 2 },
   };
-  const document = await buildCalendarDocument(config);
-  const tokens: GoogleTokens = {
+  const document = await buildDocument(config);
+  const profile = deriveAuthProfile(document);
+  const tokens: OAuthTokens = {
     accessToken: 'access',
     refreshToken: 'refresh',
     expiresAt: Date.now() + 3_600_000,
   };
-  const manager = new TokenManager(config, tokens, mockFetch);
+  const manager = new TokenManager(profile, config.oauth, tokens, mockFetch);
   return new SyncEngine(config, document, manager);
 }
 
@@ -119,39 +142,42 @@ describe('SyncEngine', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('generates Google-valid base32hex event ids', () => {
-    const id = generateEventId();
-    expect(id).toMatch(/^[0-9a-v]{26}$/);
-  });
-
-  it('does a full read across pagination and both calendars', async () => {
+  it('walks the discovered hierarchy: calendars, their events, and top-level settings', async () => {
     const { fetchImpl } = makeGoogleMock();
     const engine = await makeEngine(dir, fetchImpl);
 
     const summary = await engine.fullRead();
-    expect(summary.calendars).toBe(2);
-    expect(summary.events).toBe(4); // primary 3 (two pages) + broken 1
+    expect(summary.errors).toEqual([]);
+    expect(countOf(summary, 'calendarList')).toBe(2);
+    expect(countOf(summary, 'events')).toBe(4); // primary 3 (two pages) + broken 1
+    expect(countOf(summary, 'settings')).toBe(2);
 
-    const primaryEvents = await engine.listEvents('primary');
+    const primaryEvents = await engine.list('events', { calendarId: 'primary' });
     expect(primaryEvents).toHaveLength(3);
     expect(primaryEvents.map((e) => e['summary']).sort()).toEqual(['Lunch', 'Review', 'Standup']);
   });
 
-  it('creates an event local-first and marks it synced', async () => {
+  it('creates an event local-first with a document-valid id and marks it synced', async () => {
     const { fetchImpl, events } = makeGoogleMock();
     const engine = await makeEngine(dir, fetchImpl);
     await engine.fullRead();
 
-    const { event, change } = await engine.createEvent('primary', {
-      summary: 'New meeting',
-      start: { dateTime: '2026-07-22T09:00:00Z' },
-      end: { dateTime: '2026-07-22T10:00:00Z' },
-    });
+    const { item, change } = await engine.create(
+      'events',
+      {
+        summary: 'New meeting',
+        start: { dateTime: '2026-07-22T09:00:00Z' },
+        end: { dateTime: '2026-07-22T10:00:00Z' },
+      },
+      { calendarId: 'primary' },
+    );
 
+    // The id was minted to match the overlay-declared pattern (base32hex).
+    expect(String(item['id'])).toMatch(/^[0-9a-v]{26}$/);
     // Local copy reflects it immediately (before the server confirms).
     expect(change.state).toBe('syncing');
-    expect(await engine.listEvents('primary')).toHaveLength(4);
-    expect(await engine.getEvent('primary', String(event['id']))).toMatchObject({
+    expect(await engine.list('events', { calendarId: 'primary' })).toHaveLength(4);
+    expect(await engine.get('events', String(item['id']), { calendarId: 'primary' })).toMatchObject({
       summary: 'New meeting',
     });
 
@@ -159,7 +185,7 @@ describe('SyncEngine', () => {
     const settled = engine.status().changes.find((c) => c.changeId === change.changeId);
     expect(settled?.state).toBe('synced');
     // And it reached the (mock) server.
-    expect(events.primary?.has(String(event['id']))).toBe(true);
+    expect(events.primary?.has(String(item['id']))).toBe(true);
   });
 
   it('updates and deletes local-first and syncs to the server', async () => {
@@ -167,16 +193,18 @@ describe('SyncEngine', () => {
     const engine = await makeEngine(dir, fetchImpl);
     await engine.fullRead();
 
-    const update = await engine.updateEvent('primary', 'e1', { summary: 'Standup (moved)' });
-    expect(await engine.getEvent('primary', 'e1')).toMatchObject({ summary: 'Standup (moved)' });
+    const update = await engine.update('events', 'e1', { summary: 'Standup (moved)' }, { calendarId: 'primary' });
+    expect(await engine.get('events', 'e1', { calendarId: 'primary' })).toMatchObject({
+      summary: 'Standup (moved)',
+    });
     await engine.drain();
     expect(engine.status().changes.find((c) => c.changeId === update.change.changeId)?.state).toBe(
       'synced',
     );
     expect(events.primary?.get('e1')).toMatchObject({ summary: 'Standup (moved)' });
 
-    const del = await engine.deleteEvent('primary', 'e2');
-    expect(await engine.getEvent('primary', 'e2')).toBeUndefined();
+    const del = await engine.remove('events', 'e2', { calendarId: 'primary' });
+    expect(await engine.get('events', 'e2', { calendarId: 'primary' })).toBeUndefined();
     await engine.drain();
     expect(engine.status().changes.find((c) => c.changeId === del.change.changeId)?.state).toBe(
       'synced',
@@ -189,9 +217,11 @@ describe('SyncEngine', () => {
     const engine = await makeEngine(dir, fetchImpl);
     await engine.fullRead();
 
-    const { change } = await engine.updateEvent('broken', 'bad1', { summary: 'Should not stick' });
+    const { change } = await engine.update('events', 'bad1', { summary: 'Should not stick' }, { calendarId: 'broken' });
     // Optimistically applied locally first.
-    expect(await engine.getEvent('broken', 'bad1')).toMatchObject({ summary: 'Should not stick' });
+    expect(await engine.get('events', 'bad1', { calendarId: 'broken' })).toMatchObject({
+      summary: 'Should not stick',
+    });
 
     await engine.drain();
 
@@ -199,7 +229,7 @@ describe('SyncEngine', () => {
     expect(settled?.state).toBe('failed');
     expect(settled?.error).toBeTruthy();
     // Local copy was rolled back to the pre-edit value.
-    expect(await engine.getEvent('broken', 'bad1')).toMatchObject({ summary: 'Bad' });
+    expect(await engine.get('events', 'bad1', { calendarId: 'broken' })).toMatchObject({ summary: 'Bad' });
     expect(engine.status().failed).toBeGreaterThanOrEqual(1);
   });
 });

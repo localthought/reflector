@@ -62,24 +62,33 @@ npm start            # http://localhost:3000
 Set these before starting (a `.env` is not loaded automatically — export them or
 use your process manager):
 
-| Variable                        | Required | Default                            | Purpose                                            |
-| ------------------------------- | -------- | ---------------------------------- | -------------------------------------------------- |
-| `GOOGLE_CALENDAR_CLIENT_ID`     | yes      | —                                  | Google OAuth client id                             |
-| `GOOGLE_CALENDAR_CLIENT_SECRET` | yes      | —                                  | Google OAuth client secret                         |
-| `GOOGLE_REDIRECT_URI`           | no       | `${BASE_URL}/auth/google/callback` | Must match the redirect URI on the OAuth client    |
-| `BASE_URL`                      | no       | `http://localhost:${PORT}`         | Public origin of this server                       |
-| `PORT`                          | no       | `3000`                             | Listen port                                        |
-| `DATA_DIR`                      | no       | `./data`                           | Where the local-first JSON copy is written (local-files storage) |
-| `TOKEN_STORE_PATH`              | no       | `${DATA_DIR}/tokens.json`          | Where the OAuth access + refresh tokens are stored |
-| `REMOTESTORAGE_STORE_PATH`      | no       | `${DATA_DIR}/remotestorage.json`   | Where a connected remoteStorage account is persisted |
-| `REMOTESTORAGE_MODULE`          | no       | `zipper`                           | remoteStorage module (top-level directory) data is written under |
-| `REMOTESTORAGE_CLIENT_ID`       | no       | `${BASE_URL}`                      | OAuth `client_id` presented to the remoteStorage provider |
-| `REMOTESTORAGE_REDIRECT_URI`    | no       | `${BASE_URL}/remotestorage/callback` | remoteStorage OAuth redirect URI |
+| Variable                     | Required | Default                              | Purpose                                                          |
+| ---------------------------- | -------- | ------------------------------------ | --------------------------------------------------------------- |
+| `OAUTH_CLIENT_ID`            | yes      | —                                    | OAuth client id                                                 |
+| `OAUTH_CLIENT_SECRET`        | yes      | —                                    | OAuth client secret                                             |
+| `OAUTH_REDIRECT_URI`         | no       | `${BASE_URL}/auth/callback`          | Must match the redirect URI on the OAuth client                 |
+| `BASE_URL`                   | no       | `http://localhost:${PORT}`           | Public origin of this server                                    |
+| `PORT`                       | no       | `3000`                               | Listen port                                                     |
+| `DATA_DIR`                   | no       | `./data`                             | Where the local-first JSON copy is written (local-files storage) |
+| `TOKEN_STORE_PATH`           | no       | `${DATA_DIR}/tokens.json`            | Where the OAuth access + refresh tokens are stored              |
+| `REMOTESTORAGE_STORE_PATH`   | no       | `${DATA_DIR}/remotestorage.json`     | Where a connected remoteStorage account is persisted            |
+| `REMOTESTORAGE_MODULE`       | no       | `zipper`                             | remoteStorage module (top-level directory) data is written under |
+| `REMOTESTORAGE_CLIENT_ID`    | no       | `${BASE_URL}`                        | OAuth `client_id` presented to the remoteStorage provider       |
+| `REMOTESTORAGE_REDIRECT_URI` | no       | `${BASE_URL}/remotestorage/callback` | remoteStorage OAuth redirect URI                                |
+
+The `OAUTH_*` names are generic; the historical `GOOGLE_CALENDAR_CLIENT_ID` /
+`GOOGLE_CALENDAR_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` are still accepted as
+fallbacks. Everything else about the API OAuth flow — endpoints, scopes, and the
+API base — is read from the document's security scheme and `servers`, not from
+env vars. (The `REMOTESTORAGE_*` values configure the separate OAuth flow to the
+user's own remoteStorage provider, described below.)
 
 In the [Google Cloud console](https://console.cloud.google.com/): create an
 OAuth 2.0 Client (type “Web application”), enable the **Google Calendar API**,
-and add `http://localhost:3000/auth/google/callback` as an authorized redirect
-URI. The requested scopes are `calendar`, `userinfo.email`, and `openid`.
+and add `http://localhost:3000/auth/callback` as an authorized redirect URI.
+The scopes requested are whatever the document's `oauth` security scheme
+declares — for the vendored Calendar overlay that is `calendar`,
+`userinfo.email`, and `openid`.
 
 ### Where tokens live
 
@@ -125,6 +134,10 @@ Browser SPA (public/)
       ▼
 Express server (src/server) ── SyncEngine (src/sync/engine.ts)
                                      │
+                                     ├── ResourceModel (src/sync/resources.ts)
+                                     │      · discovers collections, hierarchy,
+                                     │        and id rules from `crudResources`
+                                     │
                                      ├── syncables ApiClient  (the sync engine)
                                      │      · full read (pagination)
                                      │      · local-first create/update/delete
@@ -135,18 +148,34 @@ Express server (src/server) ── SyncEngine (src/sync/engine.ts)
                                      │      · RemoteStorageAdapter → the user's remoteStorage
                                      │      · either one enumerated → the ZIP
                                      │
-                                     └── TokenManager (src/google/authed-fetch.ts)
+                                     └── TokenManager (src/oauth/authed-fetch.ts)
                                             · injects the bearer token
                                             · fills {calendarId} in the path
-                                            · retargets to the real Google API base
+                                            · retargets to the API base from the
+                                              document's `servers`
                                             · refreshes on 401
 ```
 
-The Calendar OpenAPI document is prepared once at startup
-(`src/sync/document.ts`):
+**Nothing in `src/` is specific to Google or to the Calendar API.** The whole
+flow is driven by the OpenAPI document and its overlays:
+
+- the **OAuth flow** (`src/oauth/`) is derived from the document's `oauth2`
+  security scheme — authorization/token/refresh URLs, scopes, the extra
+  authorization-request parameters (`x-authorization-params`), and the userinfo
+  endpoint (`x-userinfo-url`) — plus the API base from `servers` (see
+  `deriveAuthProfile`). Only the OAuth *client id/secret* are deployment config.
+- which **resources** exist, their URLs, how a nested collection's parent id is
+  resolved, and how new ids are minted all come from the CRUD-causality
+  overlay's `crudResources` (see `discoverResourceModel`). The engine walks that
+  hierarchy generically; the calendar/event vocabulary lives only in the server
+  layer that presents it.
+
+The OpenAPI document is prepared once at startup (`src/sync/document.ts`):
 
 1. load the vendored `spec/google-calendar-v3.openapi.yaml`;
-2. apply both overlays (`src/sync/overlay.ts` supports the overlays' bracketed
+2. apply the overlays in `spec/overlays/` — `auth-overlay.yaml` (OAuth security
+   scheme), `pagination-overlay.yaml`, and `crud-causality-overlay.yaml`
+   (`src/sync/overlay.ts` supports the overlays' bracketed
    `$.paths['/…'].get` targets, which the parser bundled with syncables does
    not);
 3. adapt the overlays' `incrementalSync` pagination schemes into the `pageToken`
@@ -156,9 +185,9 @@ The Calendar OpenAPI document is prepared once at startup
    `envelope.itemsField` declares (Google's `Events` schema also has a
    `defaultReminders` array, which would otherwise be mistaken for the items).
 
-Each per-calendar events client is given the same document narrowed to just the
-events paths, and its own storage namespace (the calendar id), so calendars
-don't overwrite each other's events.
+Each nested collection client is given the same document narrowed to just that
+collection's paths, and its own storage namespace (the parent context, e.g. the
+calendar id), so sibling parents don't overwrite each other's records.
 
 ## Development
 

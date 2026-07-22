@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import {
   createApiClient,
   type ApiClient,
@@ -9,28 +9,34 @@ import type { ZipperConfig } from '../config/index.js';
 import {
   SYNCABLES_BASE_URL,
   type TokenManager,
-} from '../google/authed-fetch.js';
+} from '../oauth/authed-fetch.js';
+import { subsetDocument } from './document.js';
 import {
   FileStorageBackend,
   type ExportRecord,
   type StorageBackend,
 } from './storage.js';
 import {
-  CALENDAR_LIST_COLLECTION,
-  CALENDAR_LIST_PATHS,
-  EVENTS_COLLECTION,
-  EVENT_PATHS,
-  subsetDocument,
-} from './document.js';
+  discoverResourceModel,
+  generateId,
+  type ManagedCollection,
+  type ResourceModel,
+} from './resources.js';
 
 export type ChangeType = 'create' | 'update' | 'delete';
 export type ChangeState = 'syncing' | 'synced' | 'failed';
 
-/** A single local-first edit and how far its background sync to Google has got. */
+export type Context = Record<string, string>;
+
+/** A single local-first edit and how far its background sync to the server has got. */
 export interface ChangeRecord {
   changeId: string;
-  calendarId: string;
-  eventId: string;
+  /** Collection the edited record belongs to, e.g. `events`. */
+  collection: string;
+  /** Parent path parameters that locate the record, e.g. `{ calendarId }`. */
+  context: Context;
+  /** The record's id. */
+  id: string;
   type: ChangeType;
   state: ChangeState;
   summary: string;
@@ -39,38 +45,67 @@ export interface ChangeRecord {
   error?: string;
 }
 
-export interface FullReadSummary {
-  calendars: number;
-  events: number;
-  perCalendar: { calendarId: string; summary: string; events: number }[];
+/** One collection instance read during a full read. */
+export interface CollectionReadResult {
+  collection: string;
+  context: Context;
+  count: number;
 }
 
-interface EventsClient {
+export interface FullReadSummary {
+  collections: CollectionReadResult[];
+  errors: { collection: string; context: Context; error: string }[];
+}
+
+interface CollectionClient {
   client: ApiClient;
   storage: StorageAdapter;
 }
 
-const EVENT_ID_ALPHABET = '0123456789abcdefghijklmnopqrstuv'; // base32hex, per Google's id rules
+/** Fields commonly used as a human-readable label, tried in order for change summaries. */
+const LABEL_FIELDS = ['summary', 'name', 'title', 'displayName'];
 
-/** Generates an event id that satisfies Google Calendar's base32hex id rules. */
-export function generateEventId(): string {
-  const bytes = randomBytes(26);
-  let id = '';
-  for (const byte of bytes) {
-    id += EVENT_ID_ALPHABET[byte % EVENT_ID_ALPHABET.length];
+function labelOf(
+  value: Record<string, unknown> | undefined,
+  fallback: string,
+): string {
+  for (const field of LABEL_FIELDS) {
+    const label = value?.[field];
+    if (typeof label === 'string' && label) {
+      return label;
+    }
   }
-  return id;
+  return fallback;
+}
+
+function contextKey(collection: string, context: Context): string {
+  return `${collection} ${JSON.stringify(context)}`;
+}
+
+function namespaceFor(collection: ManagedCollection, context: Context): string {
+  return collection.contextParams.length
+    ? collection.contextParams.map((p) => context[p] ?? '').join(',')
+    : collection.name;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
  * Orchestrates the whole local-first flow for one connected account, using
  * syncables as the sync engine: a full read into a local JSON copy, browsing
- * that copy, and local-first create/update/delete whose background sync to
- * Google is tracked so the UI can show "syncing" / "synced" / a rollback.
+ * that copy, and local-first create/update/delete whose background sync is
+ * tracked so the UI can show "syncing" / "synced" / a rollback.
+ *
+ * Everything it operates on — which collections exist, their URLs, how nested
+ * collections get their parent ids, and how new ids are minted — is discovered
+ * from the OpenAPI document's `crudResources`, so the engine carries no
+ * knowledge of any particular API.
  */
 export class SyncEngine {
-  private readonly calendarList: EventsClient;
-  private readonly events = new Map<string, EventsClient>();
+  private readonly model: ResourceModel;
+  private readonly clients = new Map<string, CollectionClient>();
   private readonly changes: ChangeRecord[] = [];
   private readonly snapshots = new Map<
     string,
@@ -90,111 +125,213 @@ export class SyncEngine {
       config.dataDir,
     ),
   ) {
-    this.calendarList = this.makeClient(CALENDAR_LIST_PATHS, '_account', {});
+    this.model = discoverResourceModel(document);
   }
 
-  private makeClient(
-    paths: string[],
-    namespace: string,
-    pathParams: Record<string, string>,
-  ): EventsClient {
-    const storage = this.backend.adapter(namespace);
-    const client = createApiClient(subsetDocument(this.document, paths), {
-      baseUrl: SYNCABLES_BASE_URL,
-      storage,
-      fetch: this.tokens.authorizedFetch(pathParams),
-      retry: {
-        baseDelayMs: this.config.retry.baseDelayMs,
-        maxDelayMs: this.config.retry.maxDelayMs,
-        maxAttempts: this.config.retry.maxAttempts,
-      },
-    });
-    return { client, storage };
+  private requireCollection(name: string): ManagedCollection {
+    const collection = this.model.byName(name);
+    if (!collection) {
+      throw new Error(`Unknown collection "${name}"`);
+    }
+    return collection;
   }
 
-  private eventsClient(calendarId: string): EventsClient {
-    let existing = this.events.get(calendarId);
+  private getClient(
+    collection: ManagedCollection,
+    context: Context,
+  ): CollectionClient {
+    const key = contextKey(collection.name, context);
+    let existing = this.clients.get(key);
     if (!existing) {
-      existing = this.makeClient(EVENT_PATHS, calendarId, { calendarId });
-      this.events.set(calendarId, existing);
+      const storage = this.backend.adapter(namespaceFor(collection, context));
+      const client = createApiClient(
+        subsetDocument(this.document, collection.paths),
+        {
+          baseUrl: SYNCABLES_BASE_URL,
+          storage,
+          fetch: this.tokens.authorizedFetch(context),
+          retry: {
+            baseDelayMs: this.config.retry.baseDelayMs,
+            maxDelayMs: this.config.retry.maxDelayMs,
+            maxAttempts: this.config.retry.maxAttempts,
+          },
+        },
+      );
+      existing = { client, storage };
+      this.clients.set(key, existing);
     }
     return existing;
   }
 
-  /** Reads the full dataset Google has for the account into the local copy. */
+  /**
+   * Resolves the set of parent contexts a collection should be read under, or
+   * `undefined` if its parent collections have not been read yet. A top-level
+   * collection resolves to a single empty context.
+   */
+  private resolveContexts(
+    collection: ManagedCollection,
+    resolved: Map<string, Record<string, unknown>[]>,
+  ): Context[] | undefined {
+    let contexts: Context[] = [{}];
+    for (const param of collection.contextParams) {
+      const provider = this.model.providerFor(param);
+      if (!provider) {
+        return undefined;
+      }
+      const parents = resolved.get(provider.collection);
+      if (!parents) {
+        return undefined;
+      }
+      const values = parents
+        .map((item) => item[provider.field])
+        .filter((v): v is string | number => v !== undefined && v !== null)
+        .map(String);
+      const next: Context[] = [];
+      for (const ctx of contexts) {
+        for (const value of values) {
+          next.push({ ...ctx, [param]: value });
+        }
+      }
+      contexts = next;
+    }
+    return contexts;
+  }
+
+  /**
+   * Reads the full dataset the API has for the account into the local copy, by
+   * walking the discovered collection hierarchy: top-level collections first,
+   * then any collection whose parent context can be filled from what was just
+   * read. A collection that fails to read is recorded and skipped rather than
+   * aborting the whole read.
+   */
   async fullRead(): Promise<FullReadSummary> {
-    await this.calendarList.client.sync();
-    const calendars = await this.calendarList.client.list(
-      CALENDAR_LIST_COLLECTION,
-    );
-    const perCalendar: FullReadSummary['perCalendar'] = [];
-    let total = 0;
-    for (const calendar of calendars) {
-      const calendarId = String(calendar['id']);
-      const { client } = this.eventsClient(calendarId);
-      await client.sync();
-      const events = await client.list(EVENTS_COLLECTION);
-      total += events.length;
-      perCalendar.push({
-        calendarId,
-        summary: String(calendar['summary'] ?? calendarId),
-        events: events.length,
+    const resolved = new Map<string, Record<string, unknown>[]>();
+    const collections: CollectionReadResult[] = [];
+    const errors: FullReadSummary['errors'] = [];
+    const remaining = [...this.model.collections];
+
+    let progress = true;
+    while (remaining.length > 0 && progress) {
+      progress = false;
+      for (let i = remaining.length - 1; i >= 0; i -= 1) {
+        const collection = remaining[i] as ManagedCollection;
+        const contexts = this.resolveContexts(collection, resolved);
+        if (!contexts) {
+          continue;
+        }
+        remaining.splice(i, 1);
+        progress = true;
+        const merged: Record<string, unknown>[] = [];
+        for (const context of contexts) {
+          try {
+            const { client } = this.getClient(collection, context);
+            await client.sync();
+            const items = await client.list(collection.collectionUrl);
+            merged.push(...items);
+            collections.push({
+              collection: collection.name,
+              context,
+              count: items.length,
+            });
+          } catch (error) {
+            errors.push({
+              collection: collection.name,
+              context,
+              error: errorMessage(error),
+            });
+          }
+        }
+        resolved.set(collection.name, merged);
+      }
+    }
+    for (const collection of remaining) {
+      errors.push({
+        collection: collection.name,
+        context: {},
+        error: 'parent context could not be resolved',
       });
     }
-    return { calendars: calendars.length, events: total, perCalendar };
+    return { collections, errors };
   }
 
-  async listCalendars(): Promise<Record<string, unknown>[]> {
-    return this.calendarList.client.list(CALENDAR_LIST_COLLECTION);
+  async list(
+    collectionName: string,
+    context: Context = {},
+  ): Promise<Record<string, unknown>[]> {
+    const collection = this.requireCollection(collectionName);
+    return this.getClient(collection, context).client.list(
+      collection.collectionUrl,
+    );
   }
 
-  async listEvents(calendarId: string): Promise<Record<string, unknown>[]> {
-    return this.eventsClient(calendarId).client.list(EVENTS_COLLECTION);
-  }
-
-  async getEvent(
-    calendarId: string,
-    eventId: string,
+  async get(
+    collectionName: string,
+    id: string,
+    context: Context = {},
   ): Promise<Record<string, unknown> | undefined> {
-    return this.eventsClient(calendarId).client.get(EVENTS_COLLECTION, eventId);
+    const collection = this.requireCollection(collectionName);
+    return this.getClient(collection, context).client.get(
+      collection.collectionUrl,
+      id,
+    );
   }
 
-  async createEvent(
-    calendarId: string,
+  async create(
+    collectionName: string,
     data: Record<string, unknown>,
-  ): Promise<{ event: Record<string, unknown>; change: ChangeRecord }> {
-    const { client } = this.eventsClient(calendarId);
+    context: Context = {},
+  ): Promise<{ item: Record<string, unknown>; change: ChangeRecord }> {
+    const collection = this.requireCollection(collectionName);
+    const { client } = this.getClient(collection, context);
+    const supplied = data[collection.idField];
     const id =
-      typeof data['id'] === 'string' && data['id']
-        ? data['id']
-        : generateEventId();
-    const event = await client.create(EVENTS_COLLECTION, { ...data, id });
-    const change = this.track(calendarId, id, 'create', event, undefined);
-    return { event, change };
-  }
-
-  async updateEvent(
-    calendarId: string,
-    eventId: string,
-    data: Record<string, unknown>,
-  ): Promise<{ event: Record<string, unknown>; change: ChangeRecord }> {
-    const { client } = this.eventsClient(calendarId);
-    const before = await client.get(EVENTS_COLLECTION, eventId);
-    const event = await client.update(EVENTS_COLLECTION, eventId, data);
-    const change = this.track(calendarId, eventId, 'update', event, before);
-    return { event, change };
-  }
-
-  async deleteEvent(
-    calendarId: string,
-    eventId: string,
-  ): Promise<{ change: ChangeRecord }> {
-    const { client } = this.eventsClient(calendarId);
-    const before = await client.get(EVENTS_COLLECTION, eventId);
-    await client.remove(EVENTS_COLLECTION, eventId);
+      typeof supplied === 'string' && supplied
+        ? supplied
+        : collection.generatesId
+          ? generateId(collection.idPattern)
+          : undefined;
+    const payload =
+      id !== undefined ? { ...data, [collection.idField]: id } : data;
+    const item = await client.create(collection.collectionUrl, payload);
+    const finalId = String(item[collection.idField] ?? id ?? '');
     const change = this.track(
-      calendarId,
-      eventId,
+      collection,
+      context,
+      finalId,
+      'create',
+      item,
+      undefined,
+    );
+    return { item, change };
+  }
+
+  async update(
+    collectionName: string,
+    id: string,
+    data: Record<string, unknown>,
+    context: Context = {},
+  ): Promise<{ item: Record<string, unknown>; change: ChangeRecord }> {
+    const collection = this.requireCollection(collectionName);
+    const { client } = this.getClient(collection, context);
+    const before = await client.get(collection.collectionUrl, id);
+    const item = await client.update(collection.collectionUrl, id, data);
+    const change = this.track(collection, context, id, 'update', item, before);
+    return { item, change };
+  }
+
+  async remove(
+    collectionName: string,
+    id: string,
+    context: Context = {},
+  ): Promise<{ change: ChangeRecord }> {
+    const collection = this.requireCollection(collectionName);
+    const { client } = this.getClient(collection, context);
+    const before = await client.get(collection.collectionUrl, id);
+    await client.remove(collection.collectionUrl, id);
+    const change = this.track(
+      collection,
+      context,
+      id,
       'delete',
       before ?? {},
       before,
@@ -203,19 +340,21 @@ export class SyncEngine {
   }
 
   private track(
-    calendarId: string,
-    eventId: string,
+    collection: ManagedCollection,
+    context: Context,
+    id: string,
     type: ChangeType,
     value: Record<string, unknown>,
     before: Record<string, unknown> | undefined,
   ): ChangeRecord {
     const change: ChangeRecord = {
       changeId: randomUUID(),
-      calendarId,
-      eventId,
+      collection: collection.name,
+      context,
+      id,
       type,
       state: 'syncing',
-      summary: String(value['summary'] ?? before?.['summary'] ?? eventId),
+      summary: labelOf(value, labelOf(before, id)),
       startedAt: Date.now(),
     };
     this.changes.unshift(change);
@@ -244,12 +383,14 @@ export class SyncEngine {
   private async pollChanges(): Promise<void> {
     const active = this.changes.filter((change) => change.state === 'syncing');
     for (const change of active) {
-      const { client, storage } = this.eventsClient(change.calendarId);
+      const collection = this.model.byName(change.collection);
+      if (!collection) {
+        continue;
+      }
+      const { client, storage } = this.getClient(collection, change.context);
       const pending = client
-        .pendingWrites(EVENTS_COLLECTION)
-        .find(
-          (write) => write.id === change.eventId && write.type === change.type,
-        );
+        .pendingWrites(collection.collectionUrl)
+        .find((write) => write.id === change.id && write.type === change.type);
 
       if (!pending) {
         change.state = 'synced';
@@ -261,7 +402,7 @@ export class SyncEngine {
         pending.lastError !== undefined &&
         pending.attempts >= this.config.retry.maxAttempts;
       if (gaveUp) {
-        await this.rollback(change, storage);
+        await this.rollback(change, collection, storage);
         change.state = 'failed';
         change.error = pending.lastError ?? 'sync failed';
         change.settledAt = Date.now();
@@ -279,15 +420,16 @@ export class SyncEngine {
 
   private async rollback(
     change: ChangeRecord,
+    collection: ManagedCollection,
     storage: StorageAdapter,
   ): Promise<void> {
     const before = this.snapshots.get(change.changeId);
     if (change.type === 'create') {
-      await storage.delete(EVENTS_COLLECTION, change.eventId);
+      await storage.delete(collection.collectionUrl, change.id);
     } else if (before) {
-      await storage.put(EVENTS_COLLECTION, change.eventId, before);
+      await storage.put(collection.collectionUrl, change.id, before);
     } else {
-      await storage.delete(EVENTS_COLLECTION, change.eventId);
+      await storage.delete(collection.collectionUrl, change.id);
     }
   }
 

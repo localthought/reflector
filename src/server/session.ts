@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { OpenApiDocument } from 'syncables';
 import type { ZipperConfig } from '../config/index.js';
-import { TokenManager } from '../google/authed-fetch.js';
-import type { GoogleAccount, GoogleTokens } from '../google/oauth.js';
-import { TokenStore } from '../google/token-store.js';
+import { TokenManager } from '../oauth/authed-fetch.js';
+import type { AccountInfo, AuthProfile, OAuthTokens } from '../oauth/oauth.js';
+import { TokenStore } from '../oauth/token-store.js';
 import type { RemoteStorageManager } from '../remotestorage/manager.js';
 import { SyncEngine } from '../sync/engine.js';
 import { FileStorageBackend, type StorageBackend } from '../sync/storage.js';
 
 export interface ActiveSession {
   sessionId: string;
-  account: GoogleAccount;
+  account: AccountInfo;
   connectedAt: number;
   tokens: TokenManager;
   engine: SyncEngine;
@@ -29,6 +29,7 @@ export class SessionManager {
   constructor(
     private readonly config: ZipperConfig,
     private readonly document: OpenApiDocument,
+    private readonly profile: AuthProfile,
     private readonly remoteStorage: RemoteStorageManager,
   ) {
     this.store = new TokenStore(config.tokenStorePath);
@@ -57,13 +58,19 @@ export class SessionManager {
 
   private build(
     sessionId: string,
-    tokens: GoogleTokens,
-    account: GoogleAccount,
+    tokens: OAuthTokens,
+    account: AccountInfo,
     connectedAt: number,
   ): ActiveSession {
-    const manager = new TokenManager(this.config, tokens, fetch, (next) => {
-      void this.store.saveTokens(next);
-    });
+    const manager = new TokenManager(
+      this.profile,
+      this.config.oauth,
+      tokens,
+      fetch,
+      (next) => {
+        void this.store.saveTokens(next);
+      },
+    );
     return {
       sessionId,
       account,
@@ -98,8 +105,8 @@ export class SessionManager {
 
   /** Establishes a new session after a successful OAuth exchange. */
   async connect(
-    tokens: GoogleTokens,
-    account: GoogleAccount,
+    tokens: OAuthTokens,
+    account: AccountInfo,
   ): Promise<ActiveSession> {
     const sessionId = randomUUID();
     const connectedAt = Date.now();

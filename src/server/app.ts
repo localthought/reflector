@@ -8,7 +8,12 @@ import express, {
   type Response,
 } from 'express';
 import type { ZipperConfig } from '../config/index.js';
-import { buildAuthUrl, exchangeCode, fetchAccount } from '../google/oauth.js';
+import {
+  buildAuthUrl,
+  exchangeCode,
+  fetchAccount,
+  type AuthProfile,
+} from '../oauth/oauth.js';
 import type { RemoteStorageManager } from '../remotestorage/manager.js';
 import { buildZip } from '../sync/zip.js';
 import type { ActiveSession, SessionManager } from './session.js';
@@ -19,6 +24,12 @@ const publicDir = resolve(here, '..', '..', '..', 'public');
 const SESSION_COOKIE = 'zipper_session';
 const OAUTH_STATE_COOKIE = 'zipper_oauth_state';
 const RS_STATE_COOKIE = 'zipper_rs_state';
+
+// The document collections the calendar UI presents. These names are the app's
+// own vocabulary for the resources declared in the CRUD-causality overlay; the
+// engine resolves everything else (URLs, params, hierarchy) from the document.
+const CALENDAR_COLLECTION = 'calendarList';
+const EVENT_COLLECTION = 'events';
 
 function readCookie(req: Request, name: string): string | undefined {
   const header = req.headers.cookie;
@@ -46,11 +57,15 @@ function asyncRoute(
 export function createApp(
   config: ZipperConfig,
   sessions: SessionManager,
+  profile: AuthProfile,
   remoteStorage: RemoteStorageManager,
 ): Express {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
   app.use('/assets', express.static(publicDir));
+
+  const configured = (): boolean =>
+    Boolean(config.oauth.clientId && config.oauth.clientSecret);
 
   const requireSession = (
     req: Request,
@@ -69,23 +84,23 @@ export function createApp(
   });
 
   // --- OAuth ---------------------------------------------------------------
-  app.get('/auth/google', (_req, res) => {
-    if (!config.google.clientId || !config.google.clientSecret) {
+  app.get('/auth/login', (_req, res) => {
+    if (!configured()) {
       res
         .status(500)
         .send(
-          'Google OAuth is not configured. Set GOOGLE_CALENDAR_CLIENT_ID and ' +
-            'GOOGLE_CALENDAR_CLIENT_SECRET and restart.',
+          'OAuth is not configured. Set OAUTH_CLIENT_ID and ' +
+            'OAUTH_CLIENT_SECRET and restart.',
         );
       return;
     }
     const state = randomUUID();
     res.cookie(OAUTH_STATE_COOKIE, state, { httpOnly: true, sameSite: 'lax' });
-    res.redirect(buildAuthUrl(config, state));
+    res.redirect(buildAuthUrl(profile, config.oauth, state));
   });
 
   app.get(
-    '/auth/google/callback',
+    '/auth/callback',
     asyncRoute(async (req, res) => {
       const code =
         typeof req.query['code'] === 'string' ? req.query['code'] : undefined;
@@ -99,8 +114,8 @@ export function createApp(
           .send('Invalid OAuth callback (state mismatch or missing code).');
         return;
       }
-      const tokens = await exchangeCode(config, code);
-      const account = await fetchAccount(config, tokens);
+      const tokens = await exchangeCode(profile, config.oauth, code);
+      const account = await fetchAccount(profile, tokens);
       const session = await sessions.connect(tokens, account);
       res.cookie(SESSION_COOKIE, session.sessionId, {
         httpOnly: true,
@@ -124,7 +139,7 @@ export function createApp(
     const session = sessions.authorized(readCookie(req, SESSION_COOKIE));
     res.json({
       connected: Boolean(session),
-      configured: Boolean(config.google.clientId && config.google.clientSecret),
+      configured: configured(),
       account: session?.account ?? null,
       connectedAt: session?.connectedAt ?? null,
       storage: remoteStorage.status(),
@@ -215,7 +230,15 @@ export function createApp(
       if (!session) {
         return;
       }
-      res.json(await session.engine.fullRead());
+      const summary = await session.engine.fullRead();
+      // Present the generic result in the calendar UI's terms.
+      const calendars = summary.collections
+        .filter((c) => c.collection === CALENDAR_COLLECTION)
+        .reduce((sum, c) => sum + c.count, 0);
+      const events = summary.collections
+        .filter((c) => c.collection === EVENT_COLLECTION)
+        .reduce((sum, c) => sum + c.count, 0);
+      res.json({ calendars, events, ...summary });
     }),
   );
 
@@ -227,7 +250,7 @@ export function createApp(
       if (!session) {
         return;
       }
-      res.json({ calendars: await session.engine.listCalendars() });
+      res.json({ calendars: await session.engine.list(CALENDAR_COLLECTION) });
     }),
   );
 
@@ -239,7 +262,9 @@ export function createApp(
         return;
       }
       res.json({
-        events: await session.engine.listEvents(req.params.calendarId),
+        events: await session.engine.list(EVENT_COLLECTION, {
+          calendarId: req.params.calendarId,
+        }),
       });
     }),
   );
@@ -251,9 +276,10 @@ export function createApp(
       if (!session) {
         return;
       }
-      const result = await session.engine.createEvent(
-        req.params.calendarId,
+      const result = await session.engine.create(
+        EVENT_COLLECTION,
         req.body as Record<string, unknown>,
+        { calendarId: req.params.calendarId },
       );
       res.status(201).json(result);
     }),
@@ -266,10 +292,11 @@ export function createApp(
       if (!session) {
         return;
       }
-      const result = await session.engine.updateEvent(
-        req.params.calendarId,
+      const result = await session.engine.update(
+        EVENT_COLLECTION,
         req.params.eventId,
         req.body as Record<string, unknown>,
+        { calendarId: req.params.calendarId },
       );
       res.json(result);
     }),
@@ -283,10 +310,9 @@ export function createApp(
         return;
       }
       res.json(
-        await session.engine.deleteEvent(
-          req.params.calendarId,
-          req.params.eventId,
-        ),
+        await session.engine.remove(EVENT_COLLECTION, req.params.eventId, {
+          calendarId: req.params.calendarId,
+        }),
       );
     }),
   );
@@ -297,7 +323,15 @@ export function createApp(
     if (!session) {
       return;
     }
-    res.json(session.engine.status());
+    const status = session.engine.status();
+    // The UI keys sync badges by event id; expose the generic record id as such.
+    res.json({
+      ...status,
+      changes: status.changes.map((change) => ({
+        ...change,
+        eventId: change.id,
+      })),
+    });
   });
 
   // --- ZIP download --------------------------------------------------------

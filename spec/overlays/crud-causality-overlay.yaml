@@ -86,7 +86,12 @@ actions:
           source: template
         addedFields:
           id:
-            schema: { type: string }
+            # base32hex, 26 chars — the id shape Google Calendar accepts. A
+            # client that generates its own id up front (for local-first
+            # optimism) must produce one matching this pattern; the pattern is
+            # what drives Zipper's generic id generator, so there is no
+            # Google-specific id logic in code.
+            schema: { type: string, pattern: '^[a-v0-9]{26}$' }
             source: generated
             description: >
               Server-generated identifier for the new secondary calendar.
@@ -223,7 +228,10 @@ actions:
           source: template
         addedFields:
           id:
-            schema: { type: string }
+            # base32hex, 26 chars — see the calendar `create` action above.
+            # This pattern is what Zipper's generic id generator reads to mint
+            # a locally-valid event id before the first sync.
+            schema: { type: string, pattern: '^[a-v0-9]{26}$' }
             source: generated
             description: >
               Server-generated when the client does not supply its own

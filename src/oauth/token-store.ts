@@ -1,11 +1,11 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type { GoogleAccount, GoogleTokens } from './oauth.js';
+import type { AccountInfo, OAuthTokens } from './oauth.js';
 
 /** What Zipper persists about the connected account between restarts. */
 export interface StoredSession {
-  tokens: GoogleTokens;
-  account: GoogleAccount;
+  tokens: OAuthTokens;
+  account: AccountInfo;
   connectedAt: number;
   /** Opaque secret matched against the browser's session cookie. */
   sessionId: string;
@@ -50,7 +50,7 @@ export class TokenStore {
   }
 
   /** Persists a refreshed token set while leaving the stored account intact. */
-  async saveTokens(tokens: GoogleTokens): Promise<void> {
+  async saveTokens(tokens: OAuthTokens): Promise<void> {
     const existing = await this.load();
     if (!existing) {
       return;

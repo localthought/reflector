@@ -9,17 +9,17 @@ export interface ZipperConfig {
   port: number;
   /** Public origin the browser reaches this server on; used to build the OAuth redirect URI. */
   baseUrl: string;
-  google: {
+  /**
+   * OAuth *client* credentials — the only auth values that are deployment
+   * secrets rather than properties of the API. Everything else about the flow
+   * (endpoints, scopes, extra request parameters, the userinfo URL, and the
+   * API base) is read from the OpenAPI document's security scheme and
+   * `servers`, so there is nothing provider-specific here.
+   */
+  oauth: {
     clientId: string;
     clientSecret: string;
     redirectUri: string;
-    /** OAuth scopes requested. Calendar read/write plus the user's email for display. */
-    scopes: string[];
-    /** Root of the real Google API, e.g. https://www.googleapis.com/calendar/v3. */
-    apiBase: string;
-    authEndpoint: string;
-    tokenEndpoint: string;
-    userInfoEndpoint: string;
   };
   /** Directory the local-first JSON copy is written under (used when storage is local files). */
   dataDir: string;
@@ -35,9 +35,9 @@ export interface ZipperConfig {
     /** OAuth `redirect_uri` the implicit-grant token is returned to. */
     redirectUri: string;
   };
-  /** Absolute path to the vendored Google Calendar OpenAPI document. */
+  /** Absolute path to the vendored OpenAPI document the app is built around. */
   openApiPath: string;
-  /** Directory holding the localthought/overlays Calendar overlays. */
+  /** Directory holding the overlays applied to that document. */
   overlayDir: string;
   retry: {
     baseDelayMs: number;
@@ -66,27 +66,21 @@ export function loadConfig(): ZipperConfig {
   return {
     port,
     baseUrl,
-    google: {
-      // Primary names requested for deployment; the shorter aliases are kept
-      // as a fallback for convenience.
-      clientId: env('GOOGLE_CALENDAR_CLIENT_ID', env('GOOGLE_CLIENT_ID')),
+    oauth: {
+      // Generic names, with the historical Google-specific aliases kept as a
+      // fallback so existing deployments keep working.
+      clientId: env(
+        'OAUTH_CLIENT_ID',
+        env('GOOGLE_CALENDAR_CLIENT_ID', env('GOOGLE_CLIENT_ID')),
+      ),
       clientSecret: env(
-        'GOOGLE_CALENDAR_CLIENT_SECRET',
-        env('GOOGLE_CLIENT_SECRET'),
+        'OAUTH_CLIENT_SECRET',
+        env('GOOGLE_CALENDAR_CLIENT_SECRET', env('GOOGLE_CLIENT_SECRET')),
       ),
       redirectUri: env(
-        'GOOGLE_REDIRECT_URI',
-        `${baseUrl}/auth/google/callback`,
+        'OAUTH_REDIRECT_URI',
+        env('GOOGLE_REDIRECT_URI', `${baseUrl}/auth/callback`),
       ),
-      scopes: [
-        'https://www.googleapis.com/auth/calendar',
-        'https://www.googleapis.com/auth/userinfo.email',
-        'openid',
-      ],
-      apiBase: env('GOOGLE_API_BASE', 'https://www.googleapis.com/calendar/v3'),
-      authEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
-      tokenEndpoint: 'https://oauth2.googleapis.com/token',
-      userInfoEndpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
     },
     dataDir: resolve(env('DATA_DIR', resolve(repoRoot, 'data'))),
     tokenStorePath: resolve(

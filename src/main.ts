@@ -1,12 +1,14 @@
 import { loadConfig } from './config/index.js';
-import { buildCalendarDocument } from './sync/document.js';
+import { buildDocument } from './sync/document.js';
+import { deriveAuthProfile } from './oauth/oauth.js';
 import { createApp } from './server/app.js';
 import { SessionManager } from './server/session.js';
 import { RemoteStorageManager } from './remotestorage/manager.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const document = await buildCalendarDocument(config);
+  const document = await buildDocument(config);
+  const profile = deriveAuthProfile(document);
   const remoteStorage = new RemoteStorageManager(
     config.remoteStorage.storePath,
     {
@@ -16,16 +18,16 @@ async function main(): Promise<void> {
     },
   );
   await remoteStorage.restore();
-  const sessions = new SessionManager(config, document, remoteStorage);
+  const sessions = new SessionManager(config, document, profile, remoteStorage);
   await sessions.restore();
 
-  const app = createApp(config, sessions, remoteStorage);
+  const app = createApp(config, sessions, profile, remoteStorage);
   app.listen(config.port, () => {
     console.log(`Zipper listening on ${config.baseUrl}`);
-    if (!config.google.clientId || !config.google.clientSecret) {
+    if (!config.oauth.clientId || !config.oauth.clientSecret) {
       console.warn(
-        'Warning: GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET are not set; ' +
-          'the "Connect Google" flow will not work until they are.',
+        'Warning: OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET are not set; ' +
+          'the "Connect" flow will not work until they are.',
       );
     }
   });
