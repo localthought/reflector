@@ -21,6 +21,12 @@ describe('buildZip', () => {
     await backend
       .adapter('primary')
       .put('/calendars/{calendarId}/events', 'e1', { id: 'e1', summary: 'One' });
+    // A calendar id can itself contain characters that get percent-encoded on
+    // disk (the primary calendar's id is the account email), so make sure the
+    // decoded id lands in the path in place of `{calendarId}`.
+    await backend
+      .adapter('michiel@unhosted.org')
+      .put('/calendars/{calendarId}/events', 'e2', { id: 'e2', summary: 'Two' });
     await backend
       .adapter('_account')
       .put('/users/me/calendarList', 'primary', { id: 'primary' });
@@ -30,12 +36,18 @@ describe('buildZip', () => {
     const names = Object.keys(zip.files);
 
     expect(names).toContain('README.txt');
-    // Paths are decoded to readable, nested form grouped by namespace/resource.
-    expect(names).toContain('primary/calendars/{calendarId}/events/e1.json');
+    // Paths are decoded to readable, nested form grouped by namespace/resource,
+    // with the `{calendarId}` template filled in from the namespace so the
+    // archive shows the real calendar id instead of a literal placeholder.
+    expect(names).toContain('primary/calendars/primary/events/e1.json');
+    expect(names).toContain(
+      'michiel@unhosted.org/calendars/michiel@unhosted.org/events/e2.json',
+    );
+    expect(names).not.toContain('primary/calendars/{calendarId}/events/e1.json');
     expect(names).toContain('_account/users/me/calendarList/primary.json');
 
     const content = await zip
-      .file('primary/calendars/{calendarId}/events/e1.json')
+      .file('primary/calendars/primary/events/e1.json')
       ?.async('string');
     expect(JSON.parse(content ?? '{}')).toMatchObject({ summary: 'One' });
   });
