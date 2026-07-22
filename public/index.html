@@ -17,6 +17,7 @@
       </div>
       <div class="topbar-actions">
         <span id="sync-indicator" class="sync-indicator idle" title="Sync status">All changes synced</span>
+        <button id="storage-btn" class="btn ghost" title="Choose where your data is stored">Storage: Local files</button>
         <span id="account" class="account"></span>
         <button id="download-btn" class="btn" hidden>Download ZIP</button>
         <button id="disconnect-btn" class="btn ghost" hidden>Disconnect</button>
@@ -79,6 +80,28 @@
           <span class="spacer"></span>
           <button type="button" id="dialog-cancel" class="btn ghost">Cancel</button>
           <button type="submit" id="dialog-save" class="btn primary">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Storage chooser dialog -->
+    <dialog id="storage-dialog">
+      <form id="rs-form">
+        <h3>Where your data is stored</h3>
+        <p class="muted">
+          By default Zipper keeps the local-first copy in JSON files on this server. Connect your
+          <a href="https://remotestorage.io/" target="_blank" rel="noreferrer">remoteStorage</a>
+          account to store the copy in your own storage instead — your data, under your control.
+        </p>
+        <p id="storage-current" class="muted"></p>
+        <label>remoteStorage address
+          <input name="address" type="text" placeholder="you@storage.example" autocomplete="off" />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="rs-disconnect" class="btn danger" hidden>Use local files</button>
+          <span class="spacer"></span>
+          <button type="button" id="storage-close" class="btn ghost">Close</button>
+          <button type="submit" id="rs-connect" class="btn primary">Connect</button>
         </div>
       </form>
     </dialog>

@@ -10,7 +10,11 @@ import {
   SYNCABLES_BASE_URL,
   type TokenManager,
 } from '../google/authed-fetch.js';
-import { FileStorageAdapter } from './file-storage.js';
+import {
+  FileStorageBackend,
+  type ExportRecord,
+  type StorageBackend,
+} from './storage.js';
 import {
   CALENDAR_LIST_COLLECTION,
   CALENDAR_LIST_PATHS,
@@ -78,6 +82,13 @@ export class SyncEngine {
     private readonly config: ZipperConfig,
     private readonly document: OpenApiDocument,
     private readonly tokens: TokenManager,
+    /**
+     * Where the local-first copy lives. Defaults to on-disk files; a
+     * connected remoteStorage account swaps in its own backend instead.
+     */
+    private readonly backend: StorageBackend = new FileStorageBackend(
+      config.dataDir,
+    ),
   ) {
     this.calendarList = this.makeClient(CALENDAR_LIST_PATHS, '_account', {});
   }
@@ -87,7 +98,7 @@ export class SyncEngine {
     namespace: string,
     pathParams: Record<string, string>,
   ): EventsClient {
-    const storage = new FileStorageAdapter(this.config.dataDir, namespace);
+    const storage = this.backend.adapter(namespace);
     const client = createApiClient(subsetDocument(this.document, paths), {
       baseUrl: SYNCABLES_BASE_URL,
       storage,
@@ -278,6 +289,16 @@ export class SyncEngine {
     } else {
       await storage.delete(EVENTS_COLLECTION, change.eventId);
     }
+  }
+
+  /** Every record in the active storage backend, for the ZIP download. */
+  async exportRecords(): Promise<ExportRecord[]> {
+    return this.backend.enumerate();
+  }
+
+  /** Where this engine's local-first copy lives, for display in the UI. */
+  storageLabel(): string {
+    return this.backend.label;
   }
 
   /** Snapshot of sync status for the UI: how many edits are in flight and their history. */
