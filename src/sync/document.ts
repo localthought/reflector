@@ -8,32 +8,40 @@ import {
   type OverlayDocument,
 } from './overlay.js';
 
+/** Overlay files applied, in order, on top of the base document. */
+const OVERLAY_FILES = [
+  'auth-overlay.yaml',
+  'pagination-overlay.yaml',
+  'crud-causality-overlay.yaml',
+];
+
 /**
- * Loads the vendored Google Calendar OpenAPI document, applies the
- * localthought/overlays Calendar overlays (pagination + CRUD causality) that
- * define how a client interacts with the API, and normalizes the resulting
- * pagination schemes into the shape the syncables engine understands.
+ * Loads the vendored OpenAPI document and applies every overlay in
+ * `config.overlayDir`. The overlays are what make the document self-describing
+ * enough to drive the whole app: an OAuth security scheme (auth), pagination
+ * schemes (paging), and CRUD-causality resources (what to sync and how). The
+ * resulting pagination schemes are then normalized into the shape the syncables
+ * engine understands.
  */
-export async function buildCalendarDocument(
+export async function buildDocument(
   config: ZipperConfig,
 ): Promise<OpenApiDocument> {
-  const base = await loadOpenApiDocument(config.openApiPath);
-  const pagination = await loadYamlFile<OverlayDocument>(
-    `${config.overlayDir}/pagination-overlay.yaml`,
-  );
-  const crud = await loadYamlFile<OverlayDocument>(
-    `${config.overlayDir}/crud-causality-overlay.yaml`,
-  );
-  const overlaid = applyOverlay(applyOverlay(base, pagination), crud);
-  return pinItemsFields(adaptSchemesForSyncables(overlaid));
+  let document = await loadOpenApiDocument(config.openApiPath);
+  for (const file of OVERLAY_FILES) {
+    const overlay = await loadYamlFile<OverlayDocument>(
+      `${config.overlayDir}/${file}`,
+    );
+    document = applyOverlay(document, overlay);
+  }
+  return pinItemsFields(adaptSchemesForSyncables(document));
 }
 
 /**
  * Narrows a document to just the given paths (keeping shared `components`),
  * so a syncables client created from it discovers and syncs only the intended
  * resource. Without this, one client's `sync()` would try to GET every
- * collection in the full Calendar API — including paths with unbound
- * variables or no list operation.
+ * collection in the full API — including paths with unbound variables or no
+ * list operation.
  */
 export function subsetDocument(
   document: OpenApiDocument,
@@ -53,16 +61,3 @@ export function subsetDocument(
     ...(document.components ? { components: document.components } : {}),
   };
 }
-
-/** Path templates for the resources Zipper reads and edits. */
-export const CALENDAR_LIST_PATHS = [
-  '/users/me/calendarList',
-  '/users/me/calendarList/{calendarId}',
-];
-export const EVENT_PATHS = [
-  '/calendars/{calendarId}/events',
-  '/calendars/{calendarId}/events/{eventId}',
-];
-
-export const CALENDAR_LIST_COLLECTION = '/users/me/calendarList';
-export const EVENTS_COLLECTION = '/calendars/{calendarId}/events';

@@ -1,39 +1,46 @@
-import type { ZipperConfig } from '../config/index.js';
-import { refreshTokens, type GoogleTokens } from './oauth.js';
+import {
+  refreshTokens,
+  type AuthProfile,
+  type OAuthClient,
+  type OAuthTokens,
+} from './oauth.js';
 
 /**
  * Placeholder origin used for the `baseUrl` handed to the syncables client.
  * syncables builds request URLs by joining a path template onto this origin;
- * `createAuthorizedFetch` then throws the origin away and rebuilds the URL
- * against the real Google API base, so its value only has to be a valid,
- * absolute origin.
+ * `authorizedFetch` then throws the origin away and rebuilds the URL against
+ * the real API base (from the document's `servers`), so its value only has to
+ * be a valid, absolute origin.
  */
-export const SYNCABLES_BASE_URL = 'https://calendar.zipper.local';
+export const SYNCABLES_BASE_URL = 'https://api.zipper.local';
 
 export type PathParams = Record<string, string>;
 
 /**
  * Owns a connected account's token set, refreshing it as it nears expiry and
- * handing out `fetch` implementations for the syncables client to use.
+ * handing out `fetch` implementations for the syncables client to use. It is
+ * driven entirely by an {@link AuthProfile}, so it targets whatever API the
+ * OpenAPI document describes — there is nothing provider-specific here.
  */
 export class TokenManager {
-  private tokens: GoogleTokens;
-  private refreshing: Promise<GoogleTokens> | undefined;
+  private tokens: OAuthTokens;
+  private refreshing: Promise<OAuthTokens> | undefined;
 
   constructor(
-    private readonly config: ZipperConfig,
-    tokens: GoogleTokens,
+    private readonly profile: AuthProfile,
+    private readonly client: OAuthClient,
+    tokens: OAuthTokens,
     private readonly fetchImpl: typeof fetch = fetch,
-    private readonly onChange?: (tokens: GoogleTokens) => void,
+    private readonly onChange?: (tokens: OAuthTokens) => void,
   ) {
     this.tokens = tokens;
   }
 
-  current(): GoogleTokens {
+  current(): OAuthTokens {
     return this.tokens;
   }
 
-  update(tokens: GoogleTokens): void {
+  update(tokens: OAuthTokens): void {
     this.tokens = tokens;
     this.onChange?.(tokens);
   }
@@ -44,7 +51,8 @@ export class TokenManager {
     if (force || expiringSoon) {
       // Collapse concurrent refreshes (many requests can race during a sync).
       this.refreshing ??= refreshTokens(
-        this.config,
+        this.profile,
+        this.client,
         this.tokens,
         this.fetchImpl,
       )
@@ -63,9 +71,9 @@ export class TokenManager {
   /**
    * Builds a `fetch` for the syncables client. Every request it issues is
    * rewritten: the path template's `{...}` variables are filled from `params`
-   * (e.g. `calendarId`), the request is retargeted at the real Google API
-   * base, and a bearer token is attached. A 401 triggers a single forced
-   * token refresh and retry.
+   * (e.g. `calendarId`), the request is retargeted at the real API base, and a
+   * bearer token is attached. A 401 triggers a single forced token refresh and
+   * retry.
    */
   authorizedFetch(params: PathParams = {}): typeof fetch {
     const run = async (
@@ -94,7 +102,7 @@ export class TokenManager {
     return authorized as typeof fetch;
   }
 
-  /** Rewrites a syncables-issued URL into a concrete Google Calendar API URL. */
+  /** Rewrites a syncables-issued URL into a concrete API URL against the profile's base. */
   private resolveUrl(input: RequestInfo | URL, params: PathParams): string {
     const raw = typeof input === 'string' ? input : input.toString();
     const url = new URL(raw);
@@ -108,6 +116,6 @@ export class TokenManager {
         .replaceAll(`%7B${key}%7D`, encoded)
         .replaceAll(`%7b${key}%7d`, encoded);
     }
-    return `${this.config.google.apiBase}${path}${url.search}`;
+    return `${this.profile.apiBase}${path}${url.search}`;
   }
 }
