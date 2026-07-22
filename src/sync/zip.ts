@@ -1,71 +1,27 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import JSZip from 'jszip';
+import type { ExportRecord } from './storage.js';
 
-interface FileEntry {
-  /** Human-readable path used inside the archive. */
-  zipPath: string;
-  absPath: string;
-}
-
-/** Decodes the `encodeURIComponent` segments used for on-disk names back to readable text. */
-function decode(segment: string): string {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
-}
-
-async function walk(root: string): Promise<FileEntry[]> {
-  const entries: FileEntry[] = [];
-  // Layout on disk is exactly two levels deep: <namespace>/<resource>/<id>.json.
-  let namespaces: string[];
-  try {
-    namespaces = await readdir(root);
-  } catch {
-    return entries;
-  }
-  for (const namespace of namespaces) {
-    let resources: string[];
-    try {
-      resources = await readdir(join(root, namespace));
-    } catch {
-      continue;
-    }
-    for (const resource of resources) {
-      let files: string[];
-      try {
-        files = await readdir(join(root, namespace, resource));
-      } catch {
-        continue;
-      }
-      for (const file of files) {
-        if (!file.endsWith('.json')) {
-          continue;
-        }
-        // e.g. "primary" / "/calendars/{calendarId}/events" -> "calendars/{calendarId}/events"
-        const readableResource = decode(resource).replace(/^\/+/, '');
-        entries.push({
-          zipPath: join(decode(namespace), readableResource, decode(file)),
-          absPath: join(root, namespace, resource, file),
-        });
-      }
-    }
-  }
-  return entries;
+/** Builds the readable, nested path a record takes inside the archive. */
+function zipPath(record: ExportRecord): string {
+  // e.g. "primary" / "/calendars/{calendarId}/events" / "e1"
+  //   -> "primary/calendars/{calendarId}/events/e1.json"
+  const resource = record.resource.replace(/^\/+/, '');
+  return [record.namespace, resource, `${record.id}.json`]
+    .filter((part) => part.length > 0)
+    .join('/');
 }
 
 /**
- * Packages the entire local-first copy under `dataDir` into a ZIP: one JSON
- * file per record, grouped by account/calendar and resource. This is the
- * download the app is named for.
+ * Packages an entire local-first copy into a ZIP: one JSON file per record,
+ * grouped by account/calendar and resource. The records come from whichever
+ * {@link StorageBackend} is active (on-disk files or the user's remoteStorage
+ * account), so the download works the same regardless of where data lives.
+ * This is the download the app is named for.
  */
-export async function buildZip(dataDir: string): Promise<Buffer> {
+export async function buildZip(records: ExportRecord[]): Promise<Buffer> {
   const zip = new JSZip();
-  const entries = await walk(dataDir);
-  for (const entry of entries) {
-    zip.file(entry.zipPath, await readFile(entry.absPath, 'utf8'));
+  for (const record of records) {
+    zip.file(zipPath(record), JSON.stringify(record.value, null, 2));
   }
   zip.file(
     'README.txt',
@@ -73,7 +29,7 @@ export async function buildZip(dataDir: string): Promise<Buffer> {
       'Zipper export',
       '',
       `Generated: ${new Date().toISOString()}`,
-      `Records: ${entries.length}`,
+      `Records: ${records.length}`,
       '',
       'This archive is a full local copy of your Google Calendar data as read',
       'by Zipper. Each JSON file is one record (a calendar list entry or an',

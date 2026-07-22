@@ -10,6 +10,7 @@ const state = {
   editing: null, // { eventId } when editing, null when creating
   changeStates: {}, // changeId -> last seen state
   eventBadges: {}, // eventId -> 'syncing' | 'synced' | 'failed'
+  storage: { kind: 'local', label: 'Local files', userAddress: null },
 };
 
 async function api(path, options = {}) {
@@ -129,11 +130,52 @@ async function loadMe() {
   const me = await api('/api/me');
   state.configured = me.configured;
   state.connected = me.connected;
+  state.storage = me.storage || state.storage;
   el('account').textContent = me.account?.email || '';
+  renderStorage();
   render();
   if (state.connected) {
     await loadCalendars();
     startStatusPolling();
+  }
+}
+
+// --- Storage (local files vs remoteStorage) --------------------------------
+
+function renderStorage() {
+  el('storage-btn').textContent = `Storage: ${state.storage.label}`;
+  const connected = state.storage.kind === 'remotestorage';
+  el('storage-current').textContent = connected
+    ? `Connected to ${state.storage.userAddress}. Your data is stored in your remoteStorage account.`
+    : 'Currently storing data in local files on this server.';
+  el('rs-disconnect').hidden = !connected;
+}
+
+async function connectRemoteStorage(e) {
+  e.preventDefault();
+  const address = el('rs-form').address.value.trim();
+  if (!address) return;
+  try {
+    const { authUrl } = await api('/api/remotestorage/connect', {
+      method: 'POST',
+      body: JSON.stringify({ userAddress: address }),
+    });
+    // Hand off to the provider's consent screen; it redirects back to
+    // /remotestorage/callback, which posts the token and returns here.
+    window.location.href = authUrl;
+  } catch (err) {
+    toast(`Could not connect remoteStorage: ${err.message}`, 'error');
+  }
+}
+
+async function disconnectRemoteStorage() {
+  try {
+    await api('/api/remotestorage/disconnect', { method: 'POST' });
+    toast('Switched storage back to local files. Do a full read to repopulate.', 'success');
+    el('storage-dialog').close();
+    await loadMe();
+  } catch (err) {
+    toast(`Could not disconnect: ${err.message}`, 'error');
   }
 }
 
@@ -325,5 +367,13 @@ el('disconnect-btn').onclick = async () => {
   await api('/api/disconnect', { method: 'POST' });
   window.location.reload();
 };
+el('storage-btn').onclick = () => {
+  renderStorage();
+  el('rs-form').address.value = '';
+  el('storage-dialog').showModal();
+};
+el('storage-close').onclick = () => el('storage-dialog').close();
+el('rs-form').onsubmit = connectRemoteStorage;
+el('rs-disconnect').onclick = disconnectRemoteStorage;
 
 loadMe().catch((err) => toast(err.message, 'error'));

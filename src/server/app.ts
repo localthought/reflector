@@ -14,6 +14,7 @@ import {
   fetchAccount,
   type AuthProfile,
 } from '../oauth/oauth.js';
+import type { RemoteStorageManager } from '../remotestorage/manager.js';
 import { buildZip } from '../sync/zip.js';
 import type { ActiveSession, SessionManager } from './session.js';
 
@@ -22,6 +23,7 @@ const publicDir = resolve(here, '..', '..', '..', 'public');
 
 const SESSION_COOKIE = 'zipper_session';
 const OAUTH_STATE_COOKIE = 'zipper_oauth_state';
+const RS_STATE_COOKIE = 'zipper_rs_state';
 
 // The document collections the calendar UI presents. These names are the app's
 // own vocabulary for the resources declared in the CRUD-causality overlay; the
@@ -56,6 +58,7 @@ export function createApp(
   config: ZipperConfig,
   sessions: SessionManager,
   profile: AuthProfile,
+  remoteStorage: RemoteStorageManager,
 ): Express {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
@@ -139,8 +142,85 @@ export function createApp(
       configured: configured(),
       account: session?.account ?? null,
       connectedAt: session?.connectedAt ?? null,
+      storage: remoteStorage.status(),
     });
   });
+
+  // --- remoteStorage -------------------------------------------------------
+  // Discover the account and hand back the OAuth authorize URL to redirect to.
+  app.post(
+    '/api/remotestorage/connect',
+    asyncRoute(async (req, res) => {
+      const body = req.body as { userAddress?: unknown };
+      const userAddress =
+        typeof body.userAddress === 'string' ? body.userAddress.trim() : '';
+      if (!userAddress) {
+        res.status(400).json({ error: 'user_address_required' });
+        return;
+      }
+      try {
+        const { authUrl, state } =
+          await remoteStorage.beginConnect(userAddress);
+        res.cookie(RS_STATE_COOKIE, state, {
+          httpOnly: true,
+          sameSite: 'lax',
+        });
+        res.json({ authUrl });
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'discovery_failed',
+        });
+      }
+    }),
+  );
+
+  // The OAuth redirect target: a tiny page that reads the implicit-grant token
+  // out of the URL fragment (which never reaches the server) and posts it back.
+  app.get('/remotestorage/callback', (_req, res) => {
+    res.sendFile(resolve(publicDir, 'remotestorage-callback.html'));
+  });
+
+  // Receive the token the callback page extracted from the fragment.
+  app.post(
+    '/api/remotestorage/token',
+    asyncRoute(async (req, res) => {
+      const state = readCookie(req, RS_STATE_COOKIE);
+      res.clearCookie(RS_STATE_COOKIE);
+      const body = req.body as { token?: unknown; state?: unknown };
+      const token = typeof body.token === 'string' ? body.token : '';
+      if (!state || !token) {
+        res.status(400).json({ error: 'missing_state_or_token' });
+        return;
+      }
+      // If the provider echoed `state` in the fragment, it must match the cookie.
+      if (
+        typeof body.state === 'string' &&
+        body.state &&
+        body.state !== state
+      ) {
+        res.status(400).json({ error: 'state_mismatch' });
+        return;
+      }
+      try {
+        await remoteStorage.completeConnect(state, token);
+        sessions.rebuildEngine();
+        res.json({ ok: true, storage: remoteStorage.status() });
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'connect_failed',
+        });
+      }
+    }),
+  );
+
+  app.post(
+    '/api/remotestorage/disconnect',
+    asyncRoute(async (_req, res) => {
+      await remoteStorage.disconnect();
+      sessions.rebuildEngine();
+      res.json({ ok: true, storage: remoteStorage.status() });
+    }),
+  );
 
   // --- Full read -----------------------------------------------------------
   app.post(
@@ -262,7 +342,7 @@ export function createApp(
       if (!session) {
         return;
       }
-      const buffer = await buildZip(config.dataDir);
+      const buffer = await buildZip(await session.engine.exportRecords());
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader(

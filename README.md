@@ -8,6 +8,11 @@ background — while a sync is in flight the UI shows it's still syncing, and if
 the sync fails the local change is rolled back and a warning is shown. You can
 download the whole local copy as a **ZIP** at any time (hence _Zipper_).
 
+That "local copy" lives on this server as JSON files by default, but you can
+instead **connect your own [remoteStorage](https://remotestorage.io/) account**
+and keep it in your storage, under your control — see
+[Storage: local files or remoteStorage](#storage-local-files-or-remotestorage).
+
 It is built on:
 
 - **[localthought/syncables](https://github.com/localthought/syncables)** — the
@@ -57,20 +62,26 @@ npm start            # http://localhost:3000
 Set these before starting (a `.env` is not loaded automatically — export them or
 use your process manager):
 
-| Variable              | Required | Default                     | Purpose                                            |
-| --------------------- | -------- | --------------------------- | -------------------------------------------------- |
-| `OAUTH_CLIENT_ID`     | yes      | —                           | OAuth client id                                    |
-| `OAUTH_CLIENT_SECRET` | yes      | —                           | OAuth client secret                                |
-| `OAUTH_REDIRECT_URI`  | no       | `${BASE_URL}/auth/callback` | Must match the redirect URI on the OAuth client    |
-| `BASE_URL`            | no       | `http://localhost:${PORT}`  | Public origin of this server                       |
-| `PORT`                | no       | `3000`                      | Listen port                                        |
-| `DATA_DIR`            | no       | `./data`                    | Where the local-first JSON copy is written         |
-| `TOKEN_STORE_PATH`    | no       | `${DATA_DIR}/tokens.json`   | Where the OAuth access + refresh tokens are stored |
+| Variable                     | Required | Default                              | Purpose                                                          |
+| ---------------------------- | -------- | ------------------------------------ | --------------------------------------------------------------- |
+| `OAUTH_CLIENT_ID`            | yes      | —                                    | OAuth client id                                                 |
+| `OAUTH_CLIENT_SECRET`        | yes      | —                                    | OAuth client secret                                             |
+| `OAUTH_REDIRECT_URI`         | no       | `${BASE_URL}/auth/callback`          | Must match the redirect URI on the OAuth client                 |
+| `BASE_URL`                   | no       | `http://localhost:${PORT}`           | Public origin of this server                                    |
+| `PORT`                       | no       | `3000`                               | Listen port                                                     |
+| `DATA_DIR`                   | no       | `./data`                             | Where the local-first JSON copy is written (local-files storage) |
+| `TOKEN_STORE_PATH`           | no       | `${DATA_DIR}/tokens.json`            | Where the OAuth access + refresh tokens are stored              |
+| `REMOTESTORAGE_STORE_PATH`   | no       | `${DATA_DIR}/remotestorage.json`     | Where a connected remoteStorage account is persisted            |
+| `REMOTESTORAGE_MODULE`       | no       | `zipper`                             | remoteStorage module (top-level directory) data is written under |
+| `REMOTESTORAGE_CLIENT_ID`    | no       | `${BASE_URL}`                        | OAuth `client_id` presented to the remoteStorage provider       |
+| `REMOTESTORAGE_REDIRECT_URI` | no       | `${BASE_URL}/remotestorage/callback` | remoteStorage OAuth redirect URI                                |
 
 The `OAUTH_*` names are generic; the historical `GOOGLE_CALENDAR_CLIENT_ID` /
 `GOOGLE_CALENDAR_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` are still accepted as
-fallbacks. Everything else about the flow — endpoints, scopes, and the API base
-— is read from the document's security scheme and `servers`, not from env vars.
+fallbacks. Everything else about the API OAuth flow — endpoints, scopes, and the
+API base — is read from the document's security scheme and `servers`, not from
+env vars. (The `REMOTESTORAGE_*` values configure the separate OAuth flow to the
+user's own remoteStorage provider, described below.)
 
 In the [Google Cloud console](https://console.cloud.google.com/): create an
 OAuth 2.0 Client (type “Web application”), enable the **Google Calendar API**,
@@ -86,6 +97,34 @@ After the OAuth flow the access token and refresh token are persisted to
 restart; the refresh token is used to mint new access tokens automatically. The
 browser holds only an opaque, httpOnly session cookie that is matched against
 the stored session. `data/` and `tokens.json` are git-ignored.
+
+## Storage: local files or remoteStorage
+
+By default the local-first copy is written to `DATA_DIR` as one JSON file per
+record. But because syncables only ever talks to a pluggable
+[`StorageAdapter`](https://github.com/localthought/syncables), Zipper lets you
+swap that on-disk store for **your own [remoteStorage](https://remotestorage.io/)
+account** — your data then lives in your storage, not on this server.
+
+Use the **Storage** button in the top bar and enter your user address
+(`you@storage.example`). Zipper then:
+
+1. **discovers** your storage via [WebFinger](https://datatracker.ietf.org/doc/html/draft-dejong-remotestorage#section-10)
+   (`src/remotestorage/webfinger.ts`) — the storage root plus its OAuth endpoint;
+2. sends you to your provider's **consent screen** (OAuth 2.0 implicit grant,
+   scope `zipper:rw`) and receives a bearer token back at
+   `/remotestorage/callback` (the token arrives in the URL fragment, so a tiny
+   page reads it and posts it to the server);
+3. stores every record as a document at
+   `<storage-root>/zipper/<calendar>/<resource>/<id>` via
+   `RemoteStorageAdapter` (`src/remotestorage/adapter.ts`), mirroring the
+   on-disk layout but over the remoteStorage HTTP protocol.
+
+Do a **Full read** after connecting (or disconnecting) to repopulate the copy
+in its new home. The **ZIP download** works the same either way — it packages
+whatever the active backend holds. Choose *Use local files* in the Storage
+dialog to switch back. The bearer token is a secret and is persisted (owner-only)
+alongside the Google tokens, outside the data set the ZIP packages.
 
 ## How it fits together
 
@@ -104,8 +143,10 @@ Express server (src/server) ── SyncEngine (src/sync/engine.ts)
                                      │      · local-first create/update/delete
                                      │      · background retry
                                      │
-                                     ├── FileStorageAdapter (src/sync/file-storage.ts)
-                                     │      · one JSON file per record → the ZIP
+                                     ├── StorageBackend (src/sync/storage.ts)
+                                     │      · FileStorageAdapter → JSON files on disk, or
+                                     │      · RemoteStorageAdapter → the user's remoteStorage
+                                     │      · either one enumerated → the ZIP
                                      │
                                      └── TokenManager (src/oauth/authed-fetch.ts)
                                             · injects the bearer token

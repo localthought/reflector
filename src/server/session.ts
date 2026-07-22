@@ -4,7 +4,9 @@ import type { ZipperConfig } from '../config/index.js';
 import { TokenManager } from '../oauth/authed-fetch.js';
 import type { AccountInfo, AuthProfile, OAuthTokens } from '../oauth/oauth.js';
 import { TokenStore } from '../oauth/token-store.js';
+import type { RemoteStorageManager } from '../remotestorage/manager.js';
 import { SyncEngine } from '../sync/engine.js';
+import { FileStorageBackend, type StorageBackend } from '../sync/storage.js';
 
 export interface ActiveSession {
   sessionId: string;
@@ -28,8 +30,17 @@ export class SessionManager {
     private readonly config: ZipperConfig,
     private readonly document: OpenApiDocument,
     private readonly profile: AuthProfile,
+    private readonly remoteStorage: RemoteStorageManager,
   ) {
     this.store = new TokenStore(config.tokenStorePath);
+  }
+
+  /** The storage backend the current session's engine should use. */
+  private backend(): StorageBackend {
+    return (
+      this.remoteStorage.backend() ??
+      new FileStorageBackend(this.config.dataDir)
+    );
   }
 
   /** Rebuilds the session from persisted tokens, if any, at startup. */
@@ -65,8 +76,31 @@ export class SessionManager {
       account,
       connectedAt,
       tokens: manager,
-      engine: new SyncEngine(this.config, this.document, manager),
+      engine: new SyncEngine(
+        this.config,
+        this.document,
+        manager,
+        this.backend(),
+      ),
     };
+  }
+
+  /**
+   * Rebuilds the active session's engine against the current storage backend.
+   * Called after a remoteStorage account is connected or disconnected so the
+   * local-first copy moves to (or away from) the user's account. A fresh
+   * full read repopulates the new location.
+   */
+  rebuildEngine(): void {
+    if (!this.active) {
+      return;
+    }
+    this.active.engine = new SyncEngine(
+      this.config,
+      this.document,
+      this.active.tokens,
+      this.backend(),
+    );
   }
 
   /** Establishes a new session after a successful OAuth exchange. */

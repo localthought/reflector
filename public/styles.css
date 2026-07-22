@@ -263,14 +263,16 @@ dialog {
 dialog::backdrop {
   background: rgba(2, 6, 23, 0.6);
 }
-#event-form label {
+#event-form label,
+#rs-form label {
   display: block;
   margin-bottom: 0.75rem;
   font-size: 0.85rem;
   color: var(--muted);
 }
 #event-form input,
-#event-form textarea {
+#event-form textarea,
+#rs-form input {
   display: block;
   width: 100%;
   margin-top: 0.25rem;

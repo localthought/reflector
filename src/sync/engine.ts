@@ -10,8 +10,12 @@ import {
   SYNCABLES_BASE_URL,
   type TokenManager,
 } from '../oauth/authed-fetch.js';
-import { FileStorageAdapter } from './file-storage.js';
 import { subsetDocument } from './document.js';
+import {
+  FileStorageBackend,
+  type ExportRecord,
+  type StorageBackend,
+} from './storage.js';
 import {
   discoverResourceModel,
   generateId,
@@ -113,6 +117,13 @@ export class SyncEngine {
     private readonly config: ZipperConfig,
     private readonly document: OpenApiDocument,
     private readonly tokens: TokenManager,
+    /**
+     * Where the local-first copy lives. Defaults to on-disk files; a
+     * connected remoteStorage account swaps in its own backend instead.
+     */
+    private readonly backend: StorageBackend = new FileStorageBackend(
+      config.dataDir,
+    ),
   ) {
     this.model = discoverResourceModel(document);
   }
@@ -132,10 +143,7 @@ export class SyncEngine {
     const key = contextKey(collection.name, context);
     let existing = this.clients.get(key);
     if (!existing) {
-      const storage = new FileStorageAdapter(
-        this.config.dataDir,
-        namespaceFor(collection, context),
-      );
+      const storage = this.backend.adapter(namespaceFor(collection, context));
       const client = createApiClient(
         subsetDocument(this.document, collection.paths),
         {
@@ -423,6 +431,16 @@ export class SyncEngine {
     } else {
       await storage.delete(collection.collectionUrl, change.id);
     }
+  }
+
+  /** Every record in the active storage backend, for the ZIP download. */
+  async exportRecords(): Promise<ExportRecord[]> {
+    return this.backend.enumerate();
+  }
+
+  /** Where this engine's local-first copy lives, for display in the UI. */
+  storageLabel(): string {
+    return this.backend.label;
   }
 
   /** Snapshot of sync status for the UI: how many edits are in flight and their history. */
