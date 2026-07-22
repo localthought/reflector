@@ -98,6 +98,99 @@ restart; the refresh token is used to mint new access tokens automatically. The
 browser holds only an opaque, httpOnly session cookie that is matched against
 the stored session. `data/` and `tokens.json` are git-ignored.
 
+### Deploying to Heroku
+
+The repo ships a `Procfile` (`web: npm start`) and an `app.json`. Heroku's Node
+buildpack installs dependencies, runs `npm run build` (tsc → `build/`)
+automatically, and starts the process from the `Procfile`; the Node version is
+pinned by `engines.node` in `package.json`.
+
+```sh
+heroku git:remote -a reflector-prod          # point this repo at your app
+heroku config:set \
+  OAUTH_CLIENT_ID=... \
+  OAUTH_CLIENT_SECRET=... \
+  BASE_URL=https://reflector-prod.herokuapp.com   # your app's real URL
+git push heroku main                          # build + release
+```
+
+In the [Google Cloud console](https://console.cloud.google.com/) add
+`${BASE_URL}/auth/callback` as an authorized redirect URI on the OAuth client
+(e.g. `https://reflector-prod.herokuapp.com/auth/callback`). `PORT` is injected
+by Heroku and read automatically; `OAUTH_REDIRECT_URI` defaults to
+`${BASE_URL}/auth/callback`, so setting `BASE_URL` is enough.
+
+> **Heads up — ephemeral disk.** A Heroku dyno's filesystem is wiped on every
+> restart and deploy, so `DATA_DIR` (`data/`) and `TOKEN_STORE_PATH`
+> (`tokens.json`) do **not** persist: you'll re-run the Google OAuth flow, and a
+> local-files calendar copy is lost, after each redeploy or the daily dyno
+> cycle. This app is single-user and file-backed, which suits a persistent host
+> (a VM/Droplet with a real disk) better than a dyno. For durable calendar data
+> on Heroku, connect a
+> [remoteStorage](#storage-local-files-or-remotestorage) account so records live
+> off-dyno — though the Google tokens still land on the ephemeral disk. See
+> [Storage and persistence across hosts](#storage-and-persistence-across-hosts).
+
+### Deploying to DigitalOcean
+
+**App Platform** (managed, git-push deploys) — the repo ships
+[`.do/app.yaml`](.do/app.yaml):
+
+```sh
+doctl apps create --spec .do/app.yaml     # or paste it into the App Platform UI
+```
+
+Set `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` as encrypted env vars in the
+app. `BASE_URL` is bound to the app's public URL (`${APP_URL}`) automatically,
+so the OAuth redirect resolves without hardcoding the hostname; add
+`${APP_URL}/auth/callback` as an authorized redirect URI on the OAuth client.
+App Platform's filesystem is **ephemeral**, with the same persistence caveat as
+Heroku.
+
+**Droplet** (a plain VM) — the better fit for this file-backed app, because the
+disk persists. Run the container (see below) with a mounted volume, or run the
+Node process directly under `systemd` with `DATA_DIR` pointing at a real
+directory. Tokens and the local copy then survive restarts with no code change.
+
+### Deploying with Docker
+
+The [`Dockerfile`](Dockerfile) is a multi-stage build (compile → production
+image) that runs as a non-root user and exposes `/app/data` as a volume:
+
+```sh
+docker build -t reflector .
+docker run -p 3000:3000 \
+  -e OAUTH_CLIENT_ID=... \
+  -e OAUTH_CLIENT_SECRET=... \
+  -e BASE_URL=https://reflector.example.com \
+  -v reflector-data:/app/data \
+  reflector
+```
+
+The `-v reflector-data:/app/data` volume persists `data/` and `tokens.json`
+across container restarts — the durable, disk-based option. This image runs on
+any container host (a Droplet, Fly.io, Render, Cloud Run, etc.).
+
+### Storage and persistence across hosts
+
+Records live in a pluggable `StorageAdapter` (see
+[How it fits together](#how-it-fits-together)). Today two adapters exist —
+local JSON files on disk and remoteStorage — both **file-shaped**, so where you
+deploy decides how persistence behaves:
+
+| Host                          | Disk        | Persistence without extra work                          |
+| ----------------------------- | ----------- | ------------------------------------------------------- |
+| Droplet / Docker-with-volume  | persistent  | ✅ tokens + local copy survive restarts                 |
+| Heroku dyno / DO App Platform | ephemeral   | ❌ wiped each deploy/restart — reconnect Google         |
+
+On an ephemeral host you have two ways to get durable data: connect a
+[remoteStorage](#storage-local-files-or-remotestorage) account (records live
+off-host; the Google tokens still land on the ephemeral disk), or add a
+database-backed adapter (e.g. Heroku Postgres). The latter is a code change — a
+new `StorageAdapter` plus a DB token store — that pairs naturally with
+multi-user support, since per-user tokens and data want a durable, queryable
+store anyway.
+
 ## Storage: local files or remoteStorage
 
 By default the local-first copy is written to `DATA_DIR` as one JSON file per

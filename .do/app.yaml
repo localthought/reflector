@@ -1,0 +1,39 @@
+# DigitalOcean App Platform spec.
+#
+#   doctl apps create --spec .do/app.yaml
+#   # or paste into the App Platform UI, or point the app at this repo.
+#
+# Note: App Platform instances have an EPHEMERAL filesystem, so DATA_DIR and
+# TOKEN_STORE_PATH are wiped on every deploy/restart (you re-run the Google
+# OAuth flow, and a local-files calendar copy is lost). For durable, file-based
+# state use a Droplet or a Docker host with a mounted volume (see the
+# Dockerfile), or connect a remoteStorage account. See README "Deploying".
+name: reflector
+region: nyc
+services:
+  - name: web
+    github:
+      repo: localthought/reflector
+      branch: main
+      deploy_on_push: true
+    environment_slug: node-js
+    build_command: npm run build
+    run_command: npm start
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    http_port: 8080
+    health_check:
+      http_path: /
+    envs:
+      # PORT is injected by App Platform (8080) and read automatically.
+      # BASE_URL is bound to the app's public URL so the OAuth redirect
+      # (${BASE_URL}/auth/callback) resolves without hardcoding the hostname.
+      - key: BASE_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: OAUTH_CLIENT_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: OAUTH_CLIENT_SECRET
+        scope: RUN_TIME
+        type: SECRET
