@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import type { OpenApiDocument } from 'syncables';
 
 /**
- * One resource collection Zipper manages, fully described by the document's
+ * One resource collection Reflector manages, fully described by the document's
  * `crudResources` extension (contributed by the CRUD-causality overlay). The
  * engine reads these instead of hard-coding any paths, so nothing here is
  * specific to Google or to Calendar — a different document with a different

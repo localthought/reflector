@@ -1,5 +1,5 @@
 import { loadOpenApiDocument, type OpenApiDocument } from 'syncables';
-import type { ZipperConfig } from '../config/index.js';
+import type { ReflectorConfig } from '../config/index.js';
 import {
   adaptSchemesForSyncables,
   applyOverlay,
@@ -24,7 +24,7 @@ const OVERLAY_FILES = [
  * engine understands.
  */
 export async function buildDocument(
-  config: ZipperConfig,
+  config: ReflectorConfig,
 ): Promise<OpenApiDocument> {
   let document = await loadOpenApiDocument(config.openApiPath);
   for (const file of OVERLAY_FILES) {

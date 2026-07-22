@@ -26,7 +26,7 @@ export interface OAuthClient {
 /**
  * Everything needed to run the OAuth flow and talk to the API, derived
  * entirely from the OpenAPI document (its `servers` and OAuth security
- * scheme). No provider is baked in — point Zipper at a different document with
+ * scheme). No provider is baked in — point Reflector at a different document with
  * a different `oauth` scheme and the flow follows it.
  */
 export interface AuthProfile {

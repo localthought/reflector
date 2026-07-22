@@ -3,23 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Zipper — local-first Google Calendar</title>
+    <title>Reflector — sync your systems of record</title>
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="brand">
-        <span class="logo">🗂️</span>
+        <span class="logo">🪞</span>
         <div>
-          <h1>Zipper</h1>
-          <p class="tagline">A local-first copy of your Google Calendar</p>
+          <h1>Reflector</h1>
+          <p class="tagline">Local-first sync between your systems of record</p>
         </div>
       </div>
       <div class="topbar-actions">
         <span id="sync-indicator" class="sync-indicator idle" title="Sync status">All changes synced</span>
         <button id="storage-btn" class="btn ghost" title="Choose where your data is stored">Storage: Local files</button>
         <span id="account" class="account"></span>
-        <button id="download-btn" class="btn" hidden>Download ZIP</button>
         <button id="disconnect-btn" class="btn ghost" hidden>Disconnect</button>
       </div>
     </header>
@@ -28,11 +27,13 @@
       <!-- Disconnected state -->
       <section id="connect-view" class="view centered" hidden>
         <div class="card connect-card">
-          <span class="logo big">🗂️</span>
+          <span class="logo big">🪞</span>
           <h2>Connect your Google account</h2>
           <p>
-            Zipper reads everything the Google Calendar API has for your account into a local
-            copy, lets you browse and edit it offline-first, and syncs changes back to Google.
+            Reflector reads everything the Google Calendar API has for your account into a local
+            copy, and keeps that copy synced in the background — the local-first foundation for
+            reflecting the same data across your other systems of record, such as your own
+            remoteStorage account.
           </p>
           <a id="connect-btn" class="btn primary" href="/auth/login">Connect Google</a>
           <p id="not-configured" class="muted" hidden>
@@ -45,52 +46,38 @@
       <!-- Connected state -->
       <section id="app-view" class="view" hidden>
         <div class="toolbar">
-          <button id="read-btn" class="btn primary">Full read from Google</button>
+          <button id="read-btn" class="btn primary">Sync now</button>
           <span id="read-summary" class="muted"></span>
         </div>
-        <div class="columns">
-          <aside class="sidebar">
-            <h3>Calendars</h3>
-            <ul id="calendar-list" class="calendar-list"></ul>
-          </aside>
-          <div class="content">
-            <div class="content-head">
-              <h3 id="events-title">Events</h3>
-              <button id="new-event-btn" class="btn" disabled>+ New event</button>
-            </div>
-            <ul id="event-list" class="event-list"></ul>
-          </div>
+
+        <div class="card systems-card">
+          <h3>Systems of record</h3>
+          <ul class="systems-list">
+            <li>
+              <span class="swatch" style="background: #4285f4"></span>
+              <span>Google Calendar — connected as <span id="google-account"></span></span>
+            </li>
+            <li>
+              <span class="swatch" style="background: #6366f1"></span>
+              <span>Storage — <span id="storage-summary">Local files</span></span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="side-feature">
+          <p class="muted">Side feature: export the local copy as a portable file.</p>
+          <button id="download-btn" class="btn ghost small">Download ZIP backup</button>
         </div>
       </section>
     </main>
-
-    <!-- Event editor dialog -->
-    <dialog id="event-dialog">
-      <form id="event-form" method="dialog">
-        <h3 id="dialog-title">Event</h3>
-        <label>Title<input name="summary" type="text" required /></label>
-        <label>Location<input name="location" type="text" /></label>
-        <label>Description<textarea name="description" rows="3"></textarea></label>
-        <div class="row">
-          <label>Start<input name="start" type="datetime-local" required /></label>
-          <label>End<input name="end" type="datetime-local" required /></label>
-        </div>
-        <div class="dialog-actions">
-          <button type="button" id="dialog-delete" class="btn danger" hidden>Delete</button>
-          <span class="spacer"></span>
-          <button type="button" id="dialog-cancel" class="btn ghost">Cancel</button>
-          <button type="submit" id="dialog-save" class="btn primary">Save</button>
-        </div>
-      </form>
-    </dialog>
 
     <!-- Storage chooser dialog -->
     <dialog id="storage-dialog">
       <form id="rs-form">
         <h3>Where your data is stored</h3>
         <p class="muted">
-          By default Zipper keeps the local-first copy in JSON files on this server. Connect your
-          <a href="https://remotestorage.io/" target="_blank" rel="noreferrer">remoteStorage</a>
+          By default Reflector keeps the local-first copy in JSON files on this server. Connect
+          your <a href="https://remotestorage.io/" target="_blank" rel="noreferrer">remoteStorage</a>
           account to store the copy in your own storage instead — your data, under your control.
         </p>
         <p id="storage-current" class="muted"></p>

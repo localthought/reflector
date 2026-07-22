@@ -7,7 +7,7 @@ import express, {
   type Request,
   type Response,
 } from 'express';
-import type { ZipperConfig } from '../config/index.js';
+import type { ReflectorConfig } from '../config/index.js';
 import {
   buildAuthUrl,
   exchangeCode,
@@ -21,9 +21,9 @@ import type { ActiveSession, SessionManager } from './session.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = resolve(here, '..', '..', '..', 'public');
 
-const SESSION_COOKIE = 'zipper_session';
-const OAUTH_STATE_COOKIE = 'zipper_oauth_state';
-const RS_STATE_COOKIE = 'zipper_rs_state';
+const SESSION_COOKIE = 'reflector_session';
+const OAUTH_STATE_COOKIE = 'reflector_oauth_state';
+const RS_STATE_COOKIE = 'reflector_rs_state';
 
 // The document collections the calendar UI presents. These names are the app's
 // own vocabulary for the resources declared in the CRUD-causality overlay; the
@@ -55,7 +55,7 @@ function asyncRoute(
 
 /** Wires up all HTTP routes: OAuth connect, full read, browse/edit, status, and ZIP download. */
 export function createApp(
-  config: ZipperConfig,
+  config: ReflectorConfig,
   sessions: SessionManager,
   profile: AuthProfile,
   remoteStorage: RemoteStorageManager,
@@ -347,7 +347,7 @@ export function createApp(
       res.setHeader('Content-Type', 'application/zip');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="zipper-export-${stamp}.zip"`,
+        `attachment; filename="reflector-export-${stamp}.zip"`,
       );
       res.send(buffer);
     }),

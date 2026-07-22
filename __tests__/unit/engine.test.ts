@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadConfig, type ZipperConfig } from '../../src/config/index.js';
+import { loadConfig, type ReflectorConfig } from '../../src/config/index.js';
 import { TokenManager } from '../../src/oauth/authed-fetch.js';
 import { deriveAuthProfile, type OAuthTokens } from '../../src/oauth/oauth.js';
 import { buildDocument } from '../../src/sync/document.js';
@@ -114,7 +114,7 @@ function countOf(summary: FullReadSummary, collection: string): number {
 
 async function makeEngine(dataDir: string, mockFetch: typeof fetch): Promise<SyncEngine> {
   const base = loadConfig();
-  const config: ZipperConfig = {
+  const config: ReflectorConfig = {
     ...base,
     dataDir,
     openApiPath: join(cwd, 'spec/google-calendar-v3.openapi.yaml'),
@@ -136,7 +136,7 @@ describe('SyncEngine', () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'zipper-engine-'));
+    dir = await mkdtemp(join(tmpdir(), 'reflector-engine-'));
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });

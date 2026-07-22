@@ -4,7 +4,7 @@
  * plain `fetch`. Documents are read/written/deleted at a URL; a URL ending in
  * `/` is a folder whose GET returns a JSON listing of its immediate children.
  *
- * Every namespace / resource / record id Zipper stores is encoded into a
+ * Every namespace / resource / record id Reflector stores is encoded into a
  * single path segment with `encodeSegment`, mirroring the on-disk layout of
  * {@link FileStorageAdapter}, so a folder listing's keys map straight back to
  * those values with `decodeSegment`.

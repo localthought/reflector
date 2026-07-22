@@ -10,7 +10,7 @@ describe('buildZip', () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'zipper-zip-'));
+    dir = await mkdtemp(join(tmpdir(), 'reflector-zip-'));
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });

@@ -28,6 +28,6 @@ build/
 # Misc
 .DS_Store
 
-# Zipper local-first data copy and persisted OAuth tokens
+# Reflector local-first data copy and persisted OAuth tokens
 data/
 tokens.json

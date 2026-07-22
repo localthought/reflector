@@ -14,7 +14,7 @@ import type { StorageAdapter } from 'syncables';
  * A syncables `StorageAdapter` that keeps each record as an individual JSON
  * file on disk, under `<root>/<namespace>/<resource>/<id>.json`. This is the
  * "local-first" copy the UI reads from and the exact set of files the ZIP
- * download packages — hence the app's name, Zipper.
+ * download packages.
  *
  * `namespace` separates otherwise-identical resource keys: every per-calendar
  * events client shares the collection path `/calendars/{calendarId}/events`,

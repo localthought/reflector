@@ -5,7 +5,7 @@ import {
   type OpenApiDocument,
   type StorageAdapter,
 } from 'syncables';
-import type { ZipperConfig } from '../config/index.js';
+import type { ReflectorConfig } from '../config/index.js';
 import {
   SYNCABLES_BASE_URL,
   type TokenManager,
@@ -114,7 +114,7 @@ export class SyncEngine {
   private watcher: ReturnType<typeof setInterval> | undefined;
 
   constructor(
-    private readonly config: ZipperConfig,
+    private readonly config: ReflectorConfig,
     private readonly document: OpenApiDocument,
     private readonly tokens: TokenManager,
     /**

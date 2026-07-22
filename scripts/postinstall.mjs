@@ -19,16 +19,16 @@ if (existsSync(built)) {
 }
 
 try {
-  console.log('[zipper] Building syncables dependency…');
+  console.log('[reflector] Building syncables dependency…');
   execSync('npm install --no-audit --no-fund --ignore-scripts', {
     cwd: pkgDir,
     stdio: 'inherit',
   });
   execSync('npm run build:release', { cwd: pkgDir, stdio: 'inherit' });
-  console.log('[zipper] syncables built.');
+  console.log('[reflector] syncables built.');
 } catch (error) {
   console.warn(
-    '[zipper] Could not build syncables automatically. Build it manually with:\n' +
+    '[reflector] Could not build syncables automatically. Build it manually with:\n' +
       '  cd node_modules/syncables && npm install && npm run build:release\n' +
       `  (${error instanceof Error ? error.message : String(error)})`,
   );

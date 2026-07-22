@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { loadConfig, type ZipperConfig } from '../../src/config/index.js';
+import { loadConfig, type ReflectorConfig } from '../../src/config/index.js';
 import { buildDocument } from '../../src/sync/document.js';
 import {
   deriveAuthProfile,
@@ -14,7 +14,7 @@ import {
 
 const cwd = process.cwd();
 
-const config: ZipperConfig = {
+const config: ReflectorConfig = {
   ...loadConfig(),
   openApiPath: join(cwd, 'spec/google-calendar-v3.openapi.yaml'),
   overlayDir: join(cwd, 'spec/overlays'),

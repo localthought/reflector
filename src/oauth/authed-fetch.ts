@@ -12,7 +12,7 @@ import {
  * the real API base (from the document's `servers`), so its value only has to
  * be a valid, absolute origin.
  */
-export const SYNCABLES_BASE_URL = 'https://api.zipper.local';
+export const SYNCABLES_BASE_URL = 'https://api.reflector.local';
 
 export type PathParams = Record<string, string>;
 

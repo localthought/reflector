@@ -12,8 +12,8 @@ import {
  * account. Each record is one JSON document at
  * `<base>/<namespace>/<resource>/<id>`, mirroring {@link FileStorageAdapter}'s
  * on-disk layout but over the remoteStorage HTTP protocol. `base` already
- * includes the app's storage module (e.g. `https://storage.example/me/zipper`),
- * so everything Zipper writes stays inside the scope the user granted.
+ * includes the app's storage module (e.g. `https://storage.example/me/reflector`),
+ * so everything Reflector writes stays inside the scope the user granted.
  */
 export class RemoteStorageAdapter implements StorageAdapter {
   constructor(
