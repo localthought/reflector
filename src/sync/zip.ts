@@ -3,9 +3,16 @@ import type { ExportRecord } from './storage.js';
 
 /** Builds the readable, nested path a record takes inside the archive. */
 function zipPath(record: ExportRecord): string {
+  // The namespace is the concrete value of the resource's templated id — the
+  // calendar id for per-calendar event resources (the calendar list uses
+  // `_account`, and its path has no template). Fill any `{param}` in the
+  // resource path with it so the archive shows the real calendar id instead of
+  // a literal `{calendarId}` folder.
   // e.g. "primary" / "/calendars/{calendarId}/events" / "e1"
-  //   -> "primary/calendars/{calendarId}/events/e1.json"
-  const resource = record.resource.replace(/^\/+/, '');
+  //   -> "primary/calendars/primary/events/e1.json"
+  const resource = record.resource
+    .replace(/^\/+/, '')
+    .replace(/\{[^/}]+\}/g, record.namespace);
   return [record.namespace, resource, `${record.id}.json`]
     .filter((part) => part.length > 0)
     .join('/');
