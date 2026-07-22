@@ -70,7 +70,7 @@ function makeRemoteStorageMock(): RemoteStorageMock {
   return { fetchImpl, docs };
 }
 
-const BASE = 'https://storage.example/me/zipper';
+const BASE = 'https://storage.example/me/reflector';
 
 describe('RemoteStorageAdapter', () => {
   it('puts, gets, lists and deletes records over the remoteStorage protocol', async () => {
@@ -86,7 +86,7 @@ describe('RemoteStorageAdapter', () => {
 
     // The resource path (with slashes and braces) is stored as one encoded segment.
     expect([...docs.keys()]).toContain(
-      `/me/zipper/primary/${encodeURIComponent(EVENTS)}/e1`,
+      `/me/reflector/primary/${encodeURIComponent(EVENTS)}/e1`,
     );
 
     expect(await adapter.get(EVENTS, 'e1')).toMatchObject({ summary: 'One' });

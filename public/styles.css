@@ -157,48 +157,22 @@ body {
   margin-bottom: 1rem;
 }
 
-.columns {
-  display: grid;
-  grid-template-columns: 260px 1fr;
-  gap: 1rem;
+.systems-card {
+  margin-bottom: 1rem;
 }
-@media (max-width: 720px) {
-  .columns {
-    grid-template-columns: 1fr;
-  }
-}
-
-.sidebar,
-.content {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
-}
-.sidebar h3,
-.content h3 {
+.systems-card h3 {
   margin-top: 0;
 }
-
-.calendar-list,
-.event-list {
+.systems-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
-.calendar-list li {
-  padding: 0.5rem 0.6rem;
-  border-radius: 8px;
-  cursor: pointer;
+.systems-list li {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-}
-.calendar-list li:hover {
-  background: var(--panel-2);
-}
-.calendar-list li.active {
-  background: var(--primary);
+  gap: 0.6rem;
+  padding: 0.5rem 0;
 }
 .swatch {
   width: 10px;
@@ -207,49 +181,14 @@ body {
   flex: 0 0 auto;
 }
 
-.content-head {
+.side-feature {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 0.75rem;
 }
-
-.event-list li {
-  padding: 0.7rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  margin-bottom: 0.6rem;
-  cursor: pointer;
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.event-list li:hover {
-  border-color: var(--primary);
-}
-.event-title {
-  font-weight: 600;
-}
-.event-when {
-  color: var(--muted);
+.btn.small {
   font-size: 0.8rem;
-}
-.event-badge {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  align-self: center;
-}
-.event-badge.syncing {
-  color: var(--amber);
-  border: 1px solid var(--amber);
-}
-.event-badge.synced {
-  color: var(--green);
-  border: 1px solid var(--green);
-}
-.event-badge.failed {
-  color: var(--red);
-  border: 1px solid var(--red);
+  padding: 0.3rem 0.6rem;
 }
 
 dialog {
@@ -263,15 +202,12 @@ dialog {
 dialog::backdrop {
   background: rgba(2, 6, 23, 0.6);
 }
-#event-form label,
 #rs-form label {
   display: block;
   margin-bottom: 0.75rem;
   font-size: 0.85rem;
   color: var(--muted);
 }
-#event-form input,
-#event-form textarea,
 #rs-form input {
   display: block;
   width: 100%;
@@ -282,11 +218,6 @@ dialog::backdrop {
   background: var(--panel-2);
   color: var(--text);
   font: inherit;
-}
-#event-form .row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
 }
 .dialog-actions {
   display: flex;

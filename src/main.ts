@@ -23,7 +23,7 @@ async function main(): Promise<void> {
 
   const app = createApp(config, sessions, profile, remoteStorage);
   app.listen(config.port, () => {
-    console.log(`Zipper listening on ${config.baseUrl}`);
+    console.log(`Reflector listening on ${config.baseUrl}`);
     if (!config.oauth.clientId || !config.oauth.clientSecret) {
       console.warn(
         'Warning: OAUTH_CLIENT_ID / OAUTH_CLIENT_SECRET are not set; ' +
@@ -34,6 +34,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error('Failed to start Zipper:', error);
+  console.error('Failed to start Reflector:', error);
   process.exit(1);
 });

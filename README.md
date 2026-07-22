@@ -1,22 +1,21 @@
-# Zipper
+# Reflector
 
-A **local-first** web app for your Google Calendar. Zipper connects to your
-Google account, reads everything the Google Calendar API has for you into a
-local copy made of plain JSON files, and lets you browse and edit that copy.
-Edits are applied locally first and then synced back to Google in the
-background — while a sync is in flight the UI shows it's still syncing, and if
-the sync fails the local change is rolled back and a warning is shown. You can
-download the whole local copy as a **ZIP** at any time (hence _Zipper_).
+A **local-first** app that syncs your data across multiple **systems of
+record**. Reflector connects to a system of record — today the **Google
+Calendar API** — reads everything it has for your account into a local copy
+made of plain JSON files, and keeps that copy synced in the background.
+That local-first copy can itself live in another system of record you
+control: your own **[remoteStorage](https://remotestorage.io/)** account,
+instead of files on this server. More systems of record can be added over
+time.
 
-That "local copy" lives on this server as JSON files by default, but you can
-instead **connect your own [remoteStorage](https://remotestorage.io/) account**
-and keep it in your storage, under your control — see
-[Storage: local files or remoteStorage](#storage-local-files-or-remotestorage).
+As a **side feature**, you can download the whole local copy as a **ZIP** at
+any time.
 
 It is built on:
 
 - **[localthought/syncables](https://github.com/localthought/syncables)** — the
-  sync engine. Zipper hands it an OpenAPI document and it discovers the
+  sync engine. Reflector hands it an OpenAPI document and it discovers the
   resources, walks pagination on a full read, keeps a local copy in a pluggable
   storage adapter, and applies local-first `create`/`update`/`delete` writes
   that retry against the server in the background.
@@ -33,19 +32,19 @@ Scaffolded from
 
 ## What it does
 
-1. **Connect** your Google account via OAuth 2.0.
-2. **Full read** — pull your calendar list and every event on every calendar
-   into a local JSON copy under `data/`.
-3. **Browse** the local copy in a simple viewer.
-4. **Add / edit / delete** events. Each change is written locally _first_ and
-   returns immediately, then synced to Google in the background:
-   - while the sync is pending, the change shows a **“syncing…”** badge and the
-     header shows how many changes are in flight;
-   - on success it shows **“synced”**;
-   - on failure the local change is **rolled back** to its pre-edit value and a
+1. **Connect** a system of record via OAuth 2.0 — currently your Google
+   account.
+2. **Sync** — pull the full dataset (calendar list and every event on every
+   calendar) into a local JSON copy under `data/`, and keep it synced:
+   - while a sync is in flight, the header shows how many changes are in
+     flight;
+   - on success it shows **"synced"**;
+   - on failure a change is **rolled back** to its pre-sync value and a
      warning toast is shown.
-5. **Download ZIP** — a `.zip` of the full local copy: one JSON file per record,
-   grouped by calendar and resource.
+3. **Choose where the local copy lives** — on this server, or in your own
+   remoteStorage account.
+4. **Download ZIP** (side feature) — a `.zip` of the full local copy: one
+   JSON file per record, grouped by calendar and resource.
 
 ## Running
 
@@ -72,7 +71,7 @@ use your process manager):
 | `DATA_DIR`                   | no       | `./data`                             | Where the local-first JSON copy is written (local-files storage) |
 | `TOKEN_STORE_PATH`           | no       | `${DATA_DIR}/tokens.json`            | Where the OAuth access + refresh tokens are stored              |
 | `REMOTESTORAGE_STORE_PATH`   | no       | `${DATA_DIR}/remotestorage.json`     | Where a connected remoteStorage account is persisted            |
-| `REMOTESTORAGE_MODULE`       | no       | `zipper`                             | remoteStorage module (top-level directory) data is written under |
+| `REMOTESTORAGE_MODULE`       | no       | `reflector`                          | remoteStorage module (top-level directory) data is written under |
 | `REMOTESTORAGE_CLIENT_ID`    | no       | `${BASE_URL}`                        | OAuth `client_id` presented to the remoteStorage provider       |
 | `REMOTESTORAGE_REDIRECT_URI` | no       | `${BASE_URL}/remotestorage/callback` | remoteStorage OAuth redirect URI                                |
 
@@ -195,28 +194,30 @@ store anyway.
 
 By default the local-first copy is written to `DATA_DIR` as one JSON file per
 record. But because syncables only ever talks to a pluggable
-[`StorageAdapter`](https://github.com/localthought/syncables), Zipper lets you
-swap that on-disk store for **your own [remoteStorage](https://remotestorage.io/)
-account** — your data then lives in your storage, not on this server.
+[`StorageAdapter`](https://github.com/localthought/syncables), Reflector lets
+you swap that on-disk store for **your own
+[remoteStorage](https://remotestorage.io/) account** — your data then lives in
+your storage, not on this server. This is what lets Reflector treat
+remoteStorage as another system of record alongside Google Calendar.
 
 Use the **Storage** button in the top bar and enter your user address
-(`you@storage.example`). Zipper then:
+(`you@storage.example`). Reflector then:
 
 1. **discovers** your storage via [WebFinger](https://datatracker.ietf.org/doc/html/draft-dejong-remotestorage#section-10)
    (`src/remotestorage/webfinger.ts`) — the storage root plus its OAuth endpoint;
 2. sends you to your provider's **consent screen** (OAuth 2.0 implicit grant,
-   scope `zipper:rw`) and receives a bearer token back at
+   scope `reflector:rw`) and receives a bearer token back at
    `/remotestorage/callback` (the token arrives in the URL fragment, so a tiny
    page reads it and posts it to the server);
 3. stores every record as a document at
-   `<storage-root>/zipper/<calendar>/<resource>/<id>` via
+   `<storage-root>/reflector/<calendar>/<resource>/<id>` via
    `RemoteStorageAdapter` (`src/remotestorage/adapter.ts`), mirroring the
    on-disk layout but over the remoteStorage HTTP protocol.
 
-Do a **Full read** after connecting (or disconnecting) to repopulate the copy
-in its new home. The **ZIP download** works the same either way — it packages
-whatever the active backend holds. Choose *Use local files* in the Storage
-dialog to switch back. The bearer token is a secret and is persisted (owner-only)
+**Sync** after connecting (or disconnecting) to repopulate the copy in its new
+home. The **ZIP download** works the same either way — it packages whatever
+the active backend holds. Choose *Use local files* in the Storage dialog to
+switch back. The bearer token is a secret and is persisted (owner-only)
 alongside the Google tokens, outside the data set the ZIP packages.
 
 ## How it fits together

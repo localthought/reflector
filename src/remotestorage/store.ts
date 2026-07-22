@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 /**
- * What Zipper persists about a connected remoteStorage account. The OAuth
+ * What Reflector persists about a connected remoteStorage account. The OAuth
  * token here is a secret (an implicit-grant bearer token with no refresh), so
  * it is written with owner-only permissions, outside the data set the ZIP
  * download packages.
@@ -12,7 +12,7 @@ export interface StoredRemoteStorage {
   userAddress: string;
   /** Storage root URL discovered via WebFinger; never ends in `/`. */
   href: string;
-  /** The storage module (top-level directory) Zipper writes under, e.g. `zipper`. */
+  /** The storage module (top-level directory) Reflector writes under, e.g. `reflector`. */
   module: string;
   /** OAuth bearer token granting read/write to that module. */
   token: string;

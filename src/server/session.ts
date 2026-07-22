@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { OpenApiDocument } from 'syncables';
-import type { ZipperConfig } from '../config/index.js';
+import type { ReflectorConfig } from '../config/index.js';
 import { TokenManager } from '../oauth/authed-fetch.js';
 import type { AccountInfo, AuthProfile, OAuthTokens } from '../oauth/oauth.js';
 import { TokenStore } from '../oauth/token-store.js';
@@ -17,7 +17,7 @@ export interface ActiveSession {
 }
 
 /**
- * Holds the single connected account for this Zipper instance (a personal,
+ * Holds the single connected account for this Reflector instance (a personal,
  * self-hosted tool). Tokens are persisted to disk via {@link TokenStore} so a
  * connection survives restarts; the in-memory {@link SyncEngine} is rebuilt
  * from them on startup.
@@ -27,7 +27,7 @@ export class SessionManager {
   private active: ActiveSession | undefined;
 
   constructor(
-    private readonly config: ZipperConfig,
+    private readonly config: ReflectorConfig,
     private readonly document: OpenApiDocument,
     private readonly profile: AuthProfile,
     private readonly remoteStorage: RemoteStorageManager,

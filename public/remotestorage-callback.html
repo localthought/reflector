@@ -9,7 +9,7 @@
   <body>
     <main class="view centered">
       <div class="card connect-card">
-        <span class="logo big">🗂️</span>
+        <span class="logo big">🪞</span>
         <h2 id="headline">Connecting your remoteStorage…</h2>
         <p id="detail" class="muted">Finishing up.</p>
       </div>
@@ -58,7 +58,7 @@
             throw new Error(message);
           }
           headline.textContent = 'remoteStorage connected';
-          detail.textContent = 'Returning to Zipper…';
+          detail.textContent = 'Returning to Reflector…';
           window.location.href = '/';
         } catch (err) {
           fail(err.message);

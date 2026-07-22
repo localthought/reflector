@@ -6,9 +6,9 @@ import { discover } from './webfinger.js';
 
 /** How the manager is told to build OAuth authorize URLs. */
 export interface RemoteStorageOptions {
-  /** The storage module (top-level directory) Zipper reads and writes, e.g. `zipper`. */
+  /** The storage module (top-level directory) Reflector reads and writes, e.g. `reflector`. */
   module: string;
-  /** OAuth `client_id` — the app's origin, identifying Zipper to the provider. */
+  /** OAuth `client_id` — the app's origin, identifying Reflector to the provider. */
   clientId: string;
   /** OAuth `redirect_uri` the provider sends the implicit-grant token back to. */
   redirectUri: string;
@@ -28,7 +28,7 @@ interface PendingConnect {
 }
 
 /**
- * Owns the single connected remoteStorage account for this Zipper instance: it
+ * Owns the single connected remoteStorage account for this Reflector instance: it
  * runs WebFinger discovery, hands out the OAuth authorize URL the browser is
  * sent to, completes the connection when the implicit-grant token comes back,
  * and builds the {@link StorageBackend} the {@link SyncEngine} stores its

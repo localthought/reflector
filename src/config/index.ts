@@ -5,7 +5,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** Repository root, resolved relative to this compiled file (build/src/config). */
 const repoRoot = resolve(here, '..', '..', '..');
 
-export interface ZipperConfig {
+export interface ReflectorConfig {
   port: number;
   /** Public origin the browser reaches this server on; used to build the OAuth redirect URI. */
   baseUrl: string;
@@ -28,7 +28,7 @@ export interface ZipperConfig {
   remoteStorage: {
     /** File a connected remoteStorage account is persisted to (survives restarts). */
     storePath: string;
-    /** The storage module (top-level directory) Zipper reads and writes, e.g. `zipper`. */
+    /** The storage module (top-level directory) Reflector reads and writes, e.g. `reflector`. */
     module: string;
     /** OAuth `client_id` presented to the remoteStorage provider (the app's origin). */
     clientId: string;
@@ -60,7 +60,7 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function loadConfig(): ZipperConfig {
+export function loadConfig(): ReflectorConfig {
   const port = num('PORT', 3000);
   const baseUrl = env('BASE_URL', `http://localhost:${port}`);
   return {
@@ -99,7 +99,7 @@ export function loadConfig(): ZipperConfig {
           ),
         ),
       ),
-      module: env('REMOTESTORAGE_MODULE', 'zipper'),
+      module: env('REMOTESTORAGE_MODULE', 'reflector'),
       clientId: env('REMOTESTORAGE_CLIENT_ID', baseUrl),
       redirectUri: env(
         'REMOTESTORAGE_REDIRECT_URI',

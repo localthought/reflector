@@ -2,7 +2,7 @@ overlay: 1.0.0
 info:
   title: Google Calendar API Authentication Profile
   version: 1.0.0
-# Zipper drives its whole OAuth flow from the OpenAPI document: which endpoints
+# Reflector drives its whole OAuth flow from the OpenAPI document: which endpoints
 # to hit, which scopes to request, how to obtain a refresh token, and where to
 # read the connected account's profile all come from the security scheme below,
 # not from code. The base Google document already declares two OAuth schemes

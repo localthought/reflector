@@ -24,9 +24,9 @@ function webfingerFetch(): typeof fetch {
 }
 
 const OPTIONS = {
-  module: 'zipper',
-  clientId: 'https://zipper.example',
-  redirectUri: 'https://zipper.example/remotestorage/callback',
+  module: 'reflector',
+  clientId: 'https://reflector.example',
+  redirectUri: 'https://reflector.example/remotestorage/callback',
 };
 
 describe('RemoteStorageManager', () => {
@@ -34,7 +34,7 @@ describe('RemoteStorageManager', () => {
   let storePath: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'zipper-rs-'));
+    dir = await mkdtemp(join(tmpdir(), 'reflector-rs-'));
     storePath = join(dir, 'remotestorage.json');
   });
   afterEach(async () => {
@@ -60,7 +60,7 @@ describe('RemoteStorageManager', () => {
     expect(url.origin + url.pathname).toBe('https://storage.example/oauth/me');
     expect(url.searchParams.get('redirect_uri')).toBe(OPTIONS.redirectUri);
     expect(url.searchParams.get('client_id')).toBe(OPTIONS.clientId);
-    expect(url.searchParams.get('scope')).toBe('zipper:rw');
+    expect(url.searchParams.get('scope')).toBe('reflector:rw');
     expect(url.searchParams.get('response_type')).toBe('token');
     expect(url.searchParams.get('state')).toBe(state);
   });
@@ -73,7 +73,7 @@ describe('RemoteStorageManager', () => {
     expect(connection).toMatchObject({
       userAddress: 'me@storage.example',
       href: 'https://storage.example/me',
-      module: 'zipper',
+      module: 'reflector',
       token: 'the-token',
     });
     expect(manager.backend()?.label).toBe('remoteStorage: me@storage.example');

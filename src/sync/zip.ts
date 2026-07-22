@@ -23,7 +23,7 @@ function zipPath(record: ExportRecord): string {
  * grouped by account/calendar and resource. The records come from whichever
  * {@link StorageBackend} is active (on-disk files or the user's remoteStorage
  * account), so the download works the same regardless of where data lives.
- * This is the download the app is named for.
+ * A side feature alongside the app's main job of syncing systems of record.
  */
 export async function buildZip(records: ExportRecord[]): Promise<Buffer> {
   const zip = new JSZip();
@@ -33,13 +33,13 @@ export async function buildZip(records: ExportRecord[]): Promise<Buffer> {
   zip.file(
     'README.txt',
     [
-      'Zipper export',
+      'Reflector export',
       '',
       `Generated: ${new Date().toISOString()}`,
       `Records: ${records.length}`,
       '',
       'This archive is a full local copy of your Google Calendar data as read',
-      'by Zipper. Each JSON file is one record (a calendar list entry or an',
+      'by Reflector. Each JSON file is one record (a calendar list entry or an',
       'event), grouped by calendar and resource.',
       '',
     ].join('\n'),

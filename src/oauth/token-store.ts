@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { AccountInfo, OAuthTokens } from './oauth.js';
 
-/** What Zipper persists about the connected account between restarts. */
+/** What Reflector persists about the connected account between restarts. */
 export interface StoredSession {
   tokens: OAuthTokens;
   account: AccountInfo;
