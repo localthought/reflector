@@ -4,7 +4,8 @@
   "description": "A local-first web app that syncs your systems of record — starting with the Google Calendar API and your own remoteStorage account — keeping a local JSON copy you can sync and, as a side feature, download as a ZIP. Uses localthought/syncables as the sync engine and the localthought/overlays Calendar overlay.",
   "type": "module",
   "engines": {
-    "node": ">= 22.11 < 23"
+    "node": ">= 22.11 < 23",
+    "pnpm": "= 10"
   },
   "dependencies": {
     "express": "~4.21",
