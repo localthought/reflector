@@ -23,6 +23,14 @@ export interface ReflectorConfig {
   };
   /** Directory the local-first JSON copy is written under (used when storage is local files). */
   dataDir: string;
+  /** Directory the per-user session/token records are written under (file user store). */
+  usersDir: string;
+  /**
+   * Postgres connection string. When set, connected users are persisted in
+   * Postgres instead of on disk — needed on hosts with an ephemeral filesystem
+   * (a Heroku dyno, DO App Platform). Empty means the file store is used.
+   */
+  databaseUrl: string;
   /** File the connected account's OAuth tokens are persisted to (survives restarts). */
   tokenStorePath: string;
   remoteStorage: {
@@ -83,6 +91,13 @@ export function loadConfig(): ReflectorConfig {
       ),
     },
     dataDir: resolve(env('DATA_DIR', resolve(repoRoot, 'data'))),
+    usersDir: resolve(
+      env(
+        'USERS_DIR',
+        resolve(env('DATA_DIR', resolve(repoRoot, 'data')), 'users'),
+      ),
+    ),
+    databaseUrl: env('DATABASE_URL'),
     tokenStorePath: resolve(
       env(
         'TOKEN_STORE_PATH',

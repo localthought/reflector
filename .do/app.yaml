@@ -3,13 +3,19 @@
 #   doctl apps create --spec .do/app.yaml
 #   # or paste into the App Platform UI, or point the app at this repo.
 #
-# Note: App Platform instances have an EPHEMERAL filesystem, so DATA_DIR and
-# TOKEN_STORE_PATH are wiped on every deploy/restart (you re-run the Google
-# OAuth flow, and a local-files calendar copy is lost). For durable, file-based
-# state use a Droplet or a Docker host with a mounted volume (see the
-# Dockerfile), or connect a remoteStorage account. See README "Deploying".
+# Note: App Platform instances have an EPHEMERAL filesystem, so anything under
+# DATA_DIR is wiped on every deploy/restart. This spec attaches a managed dev
+# Postgres database and binds DATABASE_URL to it, so connected users persist
+# across restarts. The local-first calendar copy still lives on the ephemeral
+# disk unless a user connects their own remoteStorage account (a full read
+# re-fetches it otherwise). For fully durable, file-based state use a Droplet or
+# a Docker host with a mounted volume (see the Dockerfile). See README "Deploying".
 name: reflector
 region: nyc
+databases:
+  - name: db
+    engine: PG
+    production: false
 services:
   - name: web
     github:
@@ -37,3 +43,8 @@ services:
       - key: OAUTH_CLIENT_SECRET
         scope: RUN_TIME
         type: SECRET
+      # Persist connected users in the attached database rather than on the
+      # ephemeral disk.
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}

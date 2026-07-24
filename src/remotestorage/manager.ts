@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { StorageBackend } from '../sync/storage.js';
 import { RemoteStorageBackend } from './adapter.js';
-import { RemoteStorageStore, type StoredRemoteStorage } from './store.js';
+import type { StoredRemoteStorage } from './store.js';
 import { discover } from './webfinger.js';
 
 /** How the manager is told to build OAuth authorize URLs. */
@@ -28,30 +28,24 @@ interface PendingConnect {
 }
 
 /**
- * Owns the single connected remoteStorage account for this Reflector instance: it
- * runs WebFinger discovery, hands out the OAuth authorize URL the browser is
- * sent to, completes the connection when the implicit-grant token comes back,
- * and builds the {@link StorageBackend} the {@link SyncEngine} stores its
- * local-first copy in. When nothing is connected, the engine falls back to the
- * on-disk file backend.
+ * A stateless service for connecting a remoteStorage account: it runs
+ * WebFinger discovery, hands out the OAuth authorize URL the browser is sent
+ * to, completes a connection when the implicit-grant token comes back, and
+ * builds the {@link StorageBackend} a {@link SyncEngine} stores its local-first
+ * copy in.
+ *
+ * It holds no per-user connection itself — a completed connection is returned
+ * to the caller and persisted with that user's session (see
+ * {@link SessionManager}), so different users' remoteStorage accounts stay
+ * separate. Only the short-lived `state → attempt` map is kept in memory.
  */
 export class RemoteStorageManager {
-  private readonly store: RemoteStorageStore;
-  private connection: StoredRemoteStorage | undefined;
   private readonly pending = new Map<string, PendingConnect>();
 
   constructor(
-    storePath: string,
     private readonly options: RemoteStorageOptions,
     private readonly fetchImpl: typeof fetch = fetch,
-  ) {
-    this.store = new RemoteStorageStore(storePath);
-  }
-
-  /** Restores a persisted connection, if any, at startup. */
-  async restore(): Promise<void> {
-    this.connection = await this.store.load();
-  }
+  ) {}
 
   /**
    * Discovers `userAddress` and returns the OAuth authorize URL to redirect the
@@ -75,60 +69,47 @@ export class RemoteStorageManager {
 
   /**
    * Completes a connection once the implicit-grant `token` comes back for a
-   * `state` from {@link beginConnect}, persisting it and making it current.
+   * `state` from {@link beginConnect}. Returns the connection for the caller to
+   * persist against the user's session; this service keeps no copy.
    */
-  async completeConnect(
-    state: string,
-    token: string,
-  ): Promise<StoredRemoteStorage> {
+  completeConnect(state: string, token: string): StoredRemoteStorage {
     const pending = this.pending.get(state);
     if (!pending) {
       throw new Error('Unknown or expired remoteStorage connect state.');
     }
     this.pending.delete(state);
-    const connection: StoredRemoteStorage = {
+    return {
       userAddress: pending.userAddress,
       href: pending.href,
       module: this.options.module,
       token,
       connectedAt: Date.now(),
     };
-    await this.store.save(connection);
-    this.connection = connection;
-    return connection;
   }
 
-  async disconnect(): Promise<void> {
-    this.connection = undefined;
-    this.pending.clear();
-    await this.store.clear();
-  }
-
-  current(): StoredRemoteStorage | undefined {
-    return this.connection;
-  }
-
-  /** The storage backend for the current connection, or `undefined` when local. */
-  backend(): StorageBackend | undefined {
-    if (!this.connection) {
+  /** The storage backend for a connection, or `undefined` when local files. */
+  backend(
+    connection: StoredRemoteStorage | undefined,
+  ): StorageBackend | undefined {
+    if (!connection) {
       return undefined;
     }
-    const base = `${this.connection.href}/${this.connection.module}`;
+    const base = `${connection.href}/${connection.module}`;
     return new RemoteStorageBackend(
       base,
-      this.authorizedFetch(this.connection.token),
-      this.connection.userAddress,
+      this.authorizedFetch(connection.token),
+      connection.userAddress,
     );
   }
 
-  status(): RemoteStorageStatus {
-    if (!this.connection) {
+  status(connection: StoredRemoteStorage | undefined): RemoteStorageStatus {
+    if (!connection) {
       return { kind: 'local', label: 'Local files', userAddress: null };
     }
     return {
       kind: 'remotestorage',
-      label: `remoteStorage: ${this.connection.userAddress}`,
-      userAddress: this.connection.userAddress,
+      label: `remoteStorage: ${connection.userAddress}`,
+      userAddress: connection.userAddress,
     };
   }
 
