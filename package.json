@@ -41,6 +41,7 @@
     "dev": "npm run build && npm run start",
     "lint": "eslint .",
     "test": "vitest run unit --config __tests__/vitest.config.ts",
+    "test:harness": "vitest run harness --config __tests__/vitest.config.ts",
     "test:coverage": "vitest run unit --config __tests__/vitest.config.ts --coverage.enabled --coverage.all",
     "prettier": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --write",
     "prettier:check": "prettier \"{src,__{tests}__}/**/*.{ts,mts}\" --config .prettierrc --check"
