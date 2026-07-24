@@ -17,6 +17,10 @@
     "BASE_URL": {
       "description": "Public origin of this app, e.g. https://reflector-prod.herokuapp.com (or your custom domain). Used to build the OAuth redirect URI, so it must match the app's real URL and the authorized redirect URI on the OAuth client.",
       "required": true
+    },
+    "DATABASE_URL": {
+      "description": "Optional. Postgres connection string used to persist connected users, so connections survive the dyno's ephemeral filesystem. Set automatically by `heroku addons:create heroku-postgresql`. Without it, users are stored on disk and lost on each restart/redeploy.",
+      "required": false
     }
   },
   "formation": {

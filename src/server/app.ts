@@ -128,8 +128,8 @@ export function createApp(
 
   app.post(
     '/api/disconnect',
-    asyncRoute(async (_req, res) => {
-      await sessions.disconnect();
+    asyncRoute(async (req, res) => {
+      await sessions.disconnect(readCookie(req, SESSION_COOKIE));
       res.clearCookie(SESSION_COOKIE);
       res.json({ ok: true });
     }),
@@ -142,7 +142,7 @@ export function createApp(
       configured: configured(),
       account: session?.account ?? null,
       connectedAt: session?.connectedAt ?? null,
-      storage: remoteStorage.status(),
+      storage: sessions.storageStatus(session),
     });
   });
 
@@ -151,6 +151,11 @@ export function createApp(
   app.post(
     '/api/remotestorage/connect',
     asyncRoute(async (req, res) => {
+      // remoteStorage is where *this user's* copy goes, so they must be
+      // connected first; the connection is tied to their session below.
+      if (!requireSession(req, res)) {
+        return;
+      }
       const body = req.body as { userAddress?: unknown };
       const userAddress =
         typeof body.userAddress === 'string' ? body.userAddress.trim() : '';
@@ -184,6 +189,10 @@ export function createApp(
   app.post(
     '/api/remotestorage/token',
     asyncRoute(async (req, res) => {
+      const session = requireSession(req, res);
+      if (!session) {
+        return;
+      }
       const state = readCookie(req, RS_STATE_COOKIE);
       res.clearCookie(RS_STATE_COOKIE);
       const body = req.body as { token?: unknown; state?: unknown };
@@ -202,9 +211,9 @@ export function createApp(
         return;
       }
       try {
-        await remoteStorage.completeConnect(state, token);
-        sessions.rebuildEngine();
-        res.json({ ok: true, storage: remoteStorage.status() });
+        const connection = remoteStorage.completeConnect(state, token);
+        await sessions.setRemoteStorage(session.sessionId, connection);
+        res.json({ ok: true, storage: remoteStorage.status(connection) });
       } catch (error) {
         res.status(400).json({
           error: error instanceof Error ? error.message : 'connect_failed',
@@ -215,10 +224,13 @@ export function createApp(
 
   app.post(
     '/api/remotestorage/disconnect',
-    asyncRoute(async (_req, res) => {
-      await remoteStorage.disconnect();
-      sessions.rebuildEngine();
-      res.json({ ok: true, storage: remoteStorage.status() });
+    asyncRoute(async (req, res) => {
+      const session = requireSession(req, res);
+      if (!session) {
+        return;
+      }
+      await sessions.clearRemoteStorage(session.sessionId);
+      res.json({ ok: true, storage: remoteStorage.status(undefined) });
     }),
   );
 

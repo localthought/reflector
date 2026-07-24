@@ -91,11 +91,35 @@ declares — for the vendored Calendar overlay that is `calendar`,
 
 ### Where tokens live
 
-After the OAuth flow the access token and refresh token are persisted to
-`TOKEN_STORE_PATH` (owner-only permissions, `0600`), so a connection survives a
-restart; the refresh token is used to mint new access tokens automatically. The
-browser holds only an opaque, httpOnly session cookie that is matched against
-the stored session. `data/` and `tokens.json` are git-ignored.
+After the OAuth flow the access token and refresh token are persisted (owner-only
+permissions, `0600`), so a connection survives a restart; the refresh token is
+used to mint new access tokens automatically. The browser holds only an opaque,
+httpOnly session cookie that is matched against the stored session. `data/` is
+git-ignored.
+
+### Multiple users
+
+One hosted instance can serve many people at once. Each browser session is a
+separate connected user, keyed by its opaque session cookie, with its **own**
+OAuth tokens, its **own** local-first copy, and its **own** sync engine —
+concurrent users never see or overwrite each other's data. A user's local-files
+copy lives in a per-account directory (`${DATA_DIR}/copies/<account>`), and a
+connected remoteStorage account is scoped to the single user who connected it.
+
+Where those per-user records are persisted is pluggable:
+
+- **Files** (default) — one owner-only JSON file per user under
+  `${DATA_DIR}/users` (override with `USERS_DIR`). Needs a persistent disk.
+- **Postgres** — set `DATABASE_URL` and users are stored in a `reflector_users`
+  table instead (the table is created automatically). Use this on a host whose
+  filesystem is ephemeral (a Heroku dyno, DO App Platform), where the file store
+  would lose every connection on each restart/redeploy. On Heroku:
+  `heroku addons:create heroku-postgresql:essential-0` sets `DATABASE_URL` for
+  you.
+
+Upgrading an instance that already ran the earlier single-user build: its
+existing `tokens.json` (and `remotestorage.json`) is migrated into the file
+store on first start, so the connection keeps working.
 
 ### Deploying to Heroku
 
@@ -120,15 +144,12 @@ by Heroku and read automatically; `OAUTH_REDIRECT_URI` defaults to
 `${BASE_URL}/auth/callback`, so setting `BASE_URL` is enough.
 
 > **Heads up — ephemeral disk.** A Heroku dyno's filesystem is wiped on every
-> restart and deploy, so `DATA_DIR` (`data/`) and `TOKEN_STORE_PATH`
-> (`tokens.json`) do **not** persist: you'll re-run the Google OAuth flow, and a
-> local-files calendar copy is lost, after each redeploy or the daily dyno
-> cycle. This app is single-user and file-backed, which suits a persistent host
-> (a VM/Droplet with a real disk) better than a dyno. For durable calendar data
-> on Heroku, connect a
-> [remoteStorage](#storage-local-files-or-remotestorage) account so records live
-> off-dyno — though the Google tokens still land on the ephemeral disk. See
-> [Storage and persistence across hosts](#storage-and-persistence-across-hosts).
+> restart and deploy, so anything under `DATA_DIR` (`data/`) does **not**
+> persist. For durable connections set **`DATABASE_URL`** so users are stored in
+> Postgres instead of on disk (`heroku addons:create heroku-postgresql:essential-0`);
+> the local-files calendar copy is still on the ephemeral disk, so also connect a
+> [remoteStorage](#multiple-users) account, or expect to re-sync after a restart.
+> See [Storage and persistence across hosts](#storage-and-persistence-across-hosts).
 
 ### Deploying to DigitalOcean
 
@@ -143,13 +164,14 @@ Set `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` as encrypted env vars in the
 app. `BASE_URL` is bound to the app's public URL (`${APP_URL}`) automatically,
 so the OAuth redirect resolves without hardcoding the hostname; add
 `${APP_URL}/auth/callback` as an authorized redirect URI on the OAuth client.
-App Platform's filesystem is **ephemeral**, with the same persistence caveat as
-Heroku.
+App Platform's filesystem is **ephemeral**, so attach a Dev Database and set
+`DATABASE_URL` (see [Multiple users](#multiple-users)) to keep connections
+across deploys.
 
-**Droplet** (a plain VM) — the better fit for this file-backed app, because the
-disk persists. Run the container (see below) with a mounted volume, or run the
-Node process directly under `systemd` with `DATA_DIR` pointing at a real
-directory. Tokens and the local copy then survive restarts with no code change.
+**Droplet** (a plain VM) — the simplest durable option, because the disk
+persists. Run the container (see below) with a mounted volume, or run the Node
+process directly under `systemd` with `DATA_DIR` pointing at a real directory.
+Users and the local copy then survive restarts with no database needed.
 
 ### Deploying with Docker
 
@@ -166,29 +188,32 @@ docker run -p 3000:3000 \
   reflector
 ```
 
-The `-v reflector-data:/app/data` volume persists `data/` and `tokens.json`
-across container restarts — the durable, disk-based option. This image runs on
-any container host (a Droplet, Fly.io, Render, Cloud Run, etc.).
+The `-v reflector-data:/app/data` volume persists everything under `data/`
+(per-user records and the local copy) across container restarts — the durable,
+disk-based option. On a container host with no persistent volume, set
+`DATABASE_URL` instead (see [Multiple users](#multiple-users)). This image runs
+on any container host (a Droplet, Fly.io, Render, Cloud Run, etc.).
 
 ### Storage and persistence across hosts
 
-Records live in a pluggable `StorageAdapter` (see
-[How it fits together](#how-it-fits-together)). Today two adapters exist —
-local JSON files on disk and remoteStorage — both **file-shaped**, so where you
-deploy decides how persistence behaves:
+There are two things to persist: the **connected users** (their OAuth tokens and
+session) and the **local-first copy** of the data. Where you deploy decides how
+each behaves:
 
 | Host                          | Disk        | Persistence without extra work                          |
 | ----------------------------- | ----------- | ------------------------------------------------------- |
-| Droplet / Docker-with-volume  | persistent  | ✅ tokens + local copy survive restarts                 |
-| Heroku dyno / DO App Platform | ephemeral   | ❌ wiped each deploy/restart — reconnect Google         |
+| Droplet / Docker-with-volume  | persistent  | ✅ users + local copy survive restarts                  |
+| Heroku dyno / DO App Platform | ephemeral   | ❌ wiped each deploy/restart                             |
 
-On an ephemeral host you have two ways to get durable data: connect a
-[remoteStorage](#storage-local-files-or-remotestorage) account (records live
-off-host; the Google tokens still land on the ephemeral disk), or add a
-database-backed adapter (e.g. Heroku Postgres). The latter is a code change — a
-new `StorageAdapter` plus a DB token store — that pairs naturally with
-multi-user support, since per-user tokens and data want a durable, queryable
-store anyway.
+On an ephemeral host:
+
+- **Users** → set `DATABASE_URL` to persist them in Postgres instead of on disk
+  (see [Multiple users](#multiple-users)). Then connections survive restarts.
+- **Local copy** → connect a [remoteStorage](#multiple-users) account so the
+  data lives off-host in the user's own storage; otherwise the on-disk copy is
+  lost on restart and a full read re-fetches it. (Moving the calendar copy
+  itself into Postgres would mean a new syncables `StorageAdapter`; it isn't
+  needed for durable connections and isn't done here.)
 
 ## Storage: local files or remoteStorage
 
