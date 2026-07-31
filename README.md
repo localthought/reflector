@@ -143,6 +143,14 @@ In the [Google Cloud console](https://console.cloud.google.com/) add
 by Heroku and read automatically; `OAUTH_REDIRECT_URI` defaults to
 `${BASE_URL}/auth/callback`, so setting `BASE_URL` is enough.
 
+If `BASE_URL` isn't set, Reflector falls back to Heroku's
+[dyno metadata](https://devcenter.heroku.com/articles/dyno-metadata)
+(`HEROKU_APP_DEFAULT_DOMAIN_NAME`) when available, and to
+`http://localhost:$PORT` otherwise — the latter is only useful for local dev,
+so on Heroku either set `BASE_URL` explicitly (recommended, since the app's
+real domain isn't always `<app-name>.herokuapp.com`) or enable dyno metadata:
+`heroku labs:enable runtime-dyno-metadata -a reflector-prod`.
+
 > **Heads up — ephemeral disk.** A Heroku dyno's filesystem is wiped on every
 > restart and deploy, so anything under `DATA_DIR` (`data/`) does **not**
 > persist. For durable connections set **`DATABASE_URL`** so users are stored in
