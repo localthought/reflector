@@ -68,9 +68,27 @@ function num(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+/**
+ * Heroku's default domain isn't just `<app-name>.herokuapp.com` — it can carry
+ * a disambiguating suffix (e.g. `reflector-prod-8e1e64ecb238.herokuapp.com`),
+ * so it can't be reconstructed from the app name. `HEROKU_APP_DEFAULT_DOMAIN_NAME`
+ * reports the real value, but only once dyno metadata is enabled
+ * (`heroku labs:enable runtime-dyno-metadata`); falls back to undefined
+ * otherwise, e.g. when running locally.
+ */
+function herokuBaseUrl(): string | undefined {
+  const domain = env('HEROKU_APP_DEFAULT_DOMAIN_NAME');
+  return domain ? `https://${domain}` : undefined;
+}
+
 export function loadConfig(): ReflectorConfig {
   const port = num('PORT', 3000);
-  const baseUrl = env('BASE_URL', `http://localhost:${port}`);
+  // Strip a trailing slash so `${baseUrl}/auth/callback`-style joins don't
+  // double up, e.g. BASE_URL=https://example.com/ becoming .../auth/callback.
+  const baseUrl = env(
+    'BASE_URL',
+    herokuBaseUrl() ?? `http://localhost:${port}`,
+  ).replace(/\/+$/, '');
   return {
     port,
     baseUrl,
