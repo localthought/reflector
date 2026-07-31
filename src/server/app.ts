@@ -222,6 +222,39 @@ export function createApp(
     }),
   );
 
+  // Connects a remoteStorage account from a token the client already has
+  // (e.g. handed to Reflector via a `#remotestorage=...&access_token=...` URL
+  // fragment), bypassing the OAuth redirect dance in the two routes above.
+  app.post(
+    '/api/remotestorage/connect-with-token',
+    asyncRoute(async (req, res) => {
+      const session = requireSession(req, res);
+      if (!session) {
+        return;
+      }
+      const body = req.body as { userAddress?: unknown; token?: unknown };
+      const userAddress =
+        typeof body.userAddress === 'string' ? body.userAddress.trim() : '';
+      const token = typeof body.token === 'string' ? body.token : '';
+      if (!userAddress || !token) {
+        res.status(400).json({ error: 'user_address_and_token_required' });
+        return;
+      }
+      try {
+        const connection = await remoteStorage.connectWithToken(
+          userAddress,
+          token,
+        );
+        await sessions.setRemoteStorage(session.sessionId, connection);
+        res.json({ ok: true, storage: remoteStorage.status(connection) });
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : 'connect_failed',
+        });
+      }
+    }),
+  );
+
   app.post(
     '/api/remotestorage/disconnect',
     asyncRoute(async (req, res) => {
