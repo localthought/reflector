@@ -83,10 +83,12 @@ function herokuBaseUrl(): string | undefined {
 
 export function loadConfig(): ReflectorConfig {
   const port = num('PORT', 3000);
+  // Strip a trailing slash so `${baseUrl}/auth/callback`-style joins don't
+  // double up, e.g. BASE_URL=https://example.com/ becoming .../auth/callback.
   const baseUrl = env(
     'BASE_URL',
     herokuBaseUrl() ?? `http://localhost:${port}`,
-  );
+  ).replace(/\/+$/, '');
   return {
     port,
     baseUrl,

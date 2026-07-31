@@ -46,4 +46,12 @@ describe('loadConfig baseUrl', () => {
       'https://example.herokuapp.com/auth/callback',
     );
   });
+
+  it('strips a trailing slash from BASE_URL so callback URLs are not doubled', () => {
+    process.env.BASE_URL = 'https://example.com/';
+    delete process.env.HEROKU_APP_DEFAULT_DOMAIN_NAME;
+    const config = loadConfig();
+    expect(config.baseUrl).toBe('https://example.com');
+    expect(config.oauth.redirectUri).toBe('https://example.com/auth/callback');
+  });
 });
