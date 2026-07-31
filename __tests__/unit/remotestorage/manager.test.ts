@@ -21,6 +21,35 @@ function webfingerFetch(): typeof fetch {
   ) as unknown as typeof fetch;
 }
 
+/** Also answers folder-listing requests against the module base, gated on `validToken`. */
+function webfingerAndFolderFetch(validToken: string): typeof fetch {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.includes('.well-known/webfinger')) {
+      return new Response(
+        JSON.stringify({
+          links: [
+            {
+              rel: 'remotestorage',
+              href: 'https://storage.example/me/',
+              properties: { [AUTH_PROP]: 'https://storage.example/oauth/me' },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/jrd+json' } },
+      );
+    }
+    const auth = new Headers(init?.headers).get('Authorization');
+    if (auth !== `Bearer ${validToken}`) {
+      return new Response(null, { status: 401 });
+    }
+    return new Response(JSON.stringify({ items: {} }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/ld+json' },
+    });
+  }) as unknown as typeof fetch;
+}
+
 const OPTIONS = {
   module: 'reflector',
   clientId: 'https://reflector.example',
@@ -84,5 +113,32 @@ describe('RemoteStorageManager', () => {
     expect(() => manager.completeConnect(state, 'tok')).toThrow(
       /Unknown or expired/,
     );
+  });
+
+  it('connects directly from a pre-issued token once discovery and the token both check out', async () => {
+    const manager = new RemoteStorageManager(
+      OPTIONS,
+      webfingerAndFolderFetch('good-token'),
+    );
+    const connection = await manager.connectWithToken(
+      'me@storage.example',
+      'good-token',
+    );
+    expect(connection).toMatchObject({
+      userAddress: 'me@storage.example',
+      href: 'https://storage.example/me',
+      module: 'reflector',
+      token: 'good-token',
+    });
+  });
+
+  it('rejects a token the provider does not accept', async () => {
+    const manager = new RemoteStorageManager(
+      OPTIONS,
+      webfingerAndFolderFetch('good-token'),
+    );
+    await expect(
+      manager.connectWithToken('me@storage.example', 'wrong-token'),
+    ).rejects.toThrow(/status 401/);
   });
 });

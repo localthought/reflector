@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { StorageBackend } from '../sync/storage.js';
 import { RemoteStorageBackend } from './adapter.js';
+import { listFolder } from './protocol.js';
 import type { StoredRemoteStorage } from './store.js';
 import { discover } from './webfinger.js';
 
@@ -81,6 +82,32 @@ export class RemoteStorageManager {
     return {
       userAddress: pending.userAddress,
       href: pending.href,
+      module: this.options.module,
+      token,
+      connectedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Connects a remoteStorage account from an already-issued token (e.g. one
+   * handed to Reflector via a `#remotestorage=user@host&access_token=...` URL
+   * fragment), skipping the OAuth redirect. Discovers `userAddress` and
+   * verifies the token actually authorizes access before returning the
+   * connection; throws if discovery fails or the token is rejected.
+   */
+  async connectWithToken(
+    userAddress: string,
+    token: string,
+  ): Promise<StoredRemoteStorage> {
+    const info = await discover(userAddress, this.fetchImpl);
+    const base = `${info.href}/${this.options.module}`;
+    // A folder listing 404s for a module Reflector hasn't written to yet, but
+    // still fails on an invalid/unauthorized token (401/403), so it doubles
+    // as a cheap way to confirm the token actually works.
+    await listFolder(this.authorizedFetch(token), `${base}/`);
+    return {
+      userAddress: info.userAddress,
+      href: info.href,
       module: this.options.module,
       token,
       connectedAt: Date.now(),

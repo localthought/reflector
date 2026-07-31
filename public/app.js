@@ -162,6 +162,27 @@ function handleStatus(status) {
   }
 }
 
+// --- Auto-connect from a #remotestorage=user@host&access_token=... link ----
+
+async function connectFromHash() {
+  const params = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  const userAddress = params.get('remotestorage');
+  const token = params.get('access_token');
+  if (!userAddress || !token) return;
+  // Drop the token from the visible URL/history right away, whether or not
+  // connecting succeeds below.
+  history.replaceState(null, '', location.pathname + location.search);
+  try {
+    await api('/api/remotestorage/connect-with-token', {
+      method: 'POST',
+      body: JSON.stringify({ userAddress, token }),
+    });
+    toast(`remoteStorage connected: ${userAddress}`, 'success');
+  } catch (err) {
+    toast(`Could not connect remoteStorage: ${err.message}`, 'error');
+  }
+}
+
 // --- Wiring ----------------------------------------------------------------
 
 el('read-btn').onclick = fullRead;
@@ -181,4 +202,6 @@ el('storage-close').onclick = () => el('storage-dialog').close();
 el('rs-form').onsubmit = connectRemoteStorage;
 el('rs-disconnect').onclick = disconnectRemoteStorage;
 
-loadMe().catch((err) => toast(err.message, 'error'));
+connectFromHash()
+  .then(loadMe)
+  .catch((err) => toast(err.message, 'error'));
