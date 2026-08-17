@@ -7,6 +7,7 @@ import {
   type Driver,
   type Endpoint,
   type EventInput,
+  type MarkerReader,
   type Reviewer,
   type StubReflector,
 } from './roles.js';
@@ -42,6 +43,52 @@ export function compareReflection(
   return { ok: problems.length === 0, problems };
 }
 
+/** Fields the agenda oracle validates, derived from the Calendar source. */
+const AGENDA_FIELDS = ['title', 'startsAt', 'endsAt'] as const;
+
+/**
+ * Mapping-aware oracle for Calendar→Agenda. Unlike {@link compareReflection}
+ * (which deep-equals identical fields), this validates a genuinely different
+ * target shape against the declared field mapping — summary→title,
+ * start.dateTime→startsAt, end.dateTime→endsAt — independently of the
+ * reflector's own implementation.
+ */
+export function compareCalendarToAgenda(
+  source: PlatformRecord[],
+  reflected: PlatformRecord[],
+): { ok: boolean; problems: string[] } {
+  const problems: string[] = [];
+  if (reflected.length !== source.length) {
+    problems.push(
+      `expected ${source.length} reflected record(s), saw ${reflected.length}`,
+    );
+  }
+  for (const src of source) {
+    const start = src['start'] as { dateTime?: unknown } | undefined;
+    const end = src['end'] as { dateTime?: unknown } | undefined;
+    const want: Record<(typeof AGENDA_FIELDS)[number], unknown> = {
+      title: src['summary'],
+      startsAt: start?.dateTime,
+      endsAt: end?.dateTime,
+    };
+    const match = reflected.find((r) =>
+      AGENDA_FIELDS.every((f) => deepEqual(r[f], want[f])),
+    );
+    if (!match) {
+      problems.push(
+        `no agenda record maps source "${String(src['summary'])}" on ${AGENDA_FIELDS.join('/')}`,
+      );
+    }
+  }
+  return { ok: problems.length === 0, problems };
+}
+
+/** An oracle judges whether `reflected` correctly reflects `source`. */
+export type Oracle = (
+  source: PlatformRecord[],
+  reflected: PlatformRecord[],
+) => { ok: boolean; problems: string[] };
+
 export type ReflectionOutcome =
   | { status: 'reflected'; reflected: PlatformRecord[] }
   | { status: 'mismatch'; problems: string[]; reflected: PlatformRecord[] }
@@ -56,6 +103,10 @@ export interface Scenario {
   sourceCalendar: string;
   events: EventInput[];
   poll?: { timeoutMs?: number; intervalMs?: number };
+  /** Correctness oracle (default: Calendar→Calendar content compare). */
+  oracle?: Oracle;
+  /** How to read the run marker on the target's records, for teardown (default: Calendar shape). */
+  targetMarkerOf?: MarkerReader;
 }
 
 /**
@@ -91,7 +142,7 @@ export async function runReflectionScenario(
         expected: created.length,
       };
     }
-    const verdict = compareReflection(created, reflected);
+    const verdict = (s.oracle ?? compareReflection)(created, reflected);
     return verdict.ok
       ? { status: 'reflected', reflected }
       : { status: 'mismatch', problems: verdict.problems, reflected };
@@ -104,6 +155,7 @@ export async function runReflectionScenario(
       s.reflector.targetPlatform,
       s.reflector.targetCalendarId,
       runId,
+      s.targetMarkerOf,
     );
   }
 }

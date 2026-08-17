@@ -38,6 +38,19 @@ export function originOf(event: PlatformRecord): string | undefined {
 }
 
 /**
+ * Reads a run id off a record. Platforms with different record shapes keep it
+ * in different places (Calendar in `extendedProperties.private`, the agenda
+ * shape at top level), so readers are injected where records are shape-specific.
+ */
+export type MarkerReader = (record: PlatformRecord) => string | undefined;
+
+/** Reads the run marker off an agenda-shaped record (top-level field). */
+export function agendaMarkerOf(record: PlatformRecord): string | undefined {
+  const value = record[RUN_MARKER];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
  * Merges the run marker (and, if given, the origin-platform marker) into an
  * event's extendedProperties, preserving others.
  */
@@ -63,9 +76,10 @@ export function cleanupTagged(
   platform: FakePlatform,
   calendarId: string,
   runId: string,
+  readMarker: MarkerReader = markerOf,
 ): void {
   for (const event of platform.events(calendarId)) {
-    if (markerOf(event) === runId) {
+    if (readMarker(event) === runId) {
       platform.deleteDirect(calendarId, String(event['id']));
     }
   }
@@ -118,6 +132,8 @@ export class Reviewer {
   constructor(
     private readonly platform: FakePlatform,
     private readonly calendarId: string,
+    /** How to read the run marker on the target's records (default: Calendar shape). */
+    private readonly readMarker: MarkerReader = markerOf,
   ) {}
 
   /** Polls until at least `expected` run-tagged records are visible, or timeout. */
@@ -143,7 +159,7 @@ export class Reviewer {
     );
     await client.sync();
     const all = await client.list(resource);
-    return all.filter((e) => markerOf(e) === runId);
+    return all.filter((e) => this.readMarker(e) === runId);
   }
 }
 
@@ -156,6 +172,24 @@ export const identityMapping: Mapping = (source) => ({
   start: source['start'],
   end: source['end'],
   extendedProperties: source['extendedProperties'],
+});
+
+/** Pulls the ISO datetime out of a Calendar `start`/`end` object. */
+function dateTimeOf(value: unknown): unknown {
+  return (value as { dateTime?: unknown } | undefined)?.dateTime;
+}
+
+/**
+ * The correct Calendar→Agenda mapping: a genuinely different target shape
+ * (`{ title, startsAt, endsAt }` instead of `{ summary, start.dateTime,
+ * end.dateTime }`), carrying the run marker into the agenda shape's top-level
+ * field. This is what makes the mapping oracle non-trivial.
+ */
+export const calendarToAgenda: Mapping = (source) => ({
+  title: source['summary'],
+  startsAt: dateTimeOf(source['start']),
+  endsAt: dateTimeOf(source['end']),
+  [RUN_MARKER]: markerOf(source),
 });
 
 export interface StubReflectorOptions {
