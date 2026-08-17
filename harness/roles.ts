@@ -9,6 +9,8 @@ import { FakePlatform, type PlatformRecord } from './fake-platform.js';
 
 /** The private extendedProperties key each driven event is tagged with. */
 const RUN_MARKER = 'reflectorRunId';
+/** The private extendedProperties key recording which platform a record originated on. */
+const ORIGIN_MARKER = 'reflectorOrigin';
 
 /** What a test wants driven onto the source platform (id + marker are added). */
 export interface EventInput {
@@ -26,13 +28,33 @@ export function markerOf(event: PlatformRecord): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
-/** Merges the run marker into an event's extendedProperties, preserving others. */
-function withMarker(event: PlatformRecord, runId: string): PlatformRecord {
+/** Reads the origin-platform marker off an event, if present. */
+export function originOf(event: PlatformRecord): string | undefined {
+  const ext = event['extendedProperties'] as
+    | { private?: Record<string, unknown> }
+    | undefined;
+  const value = ext?.private?.[ORIGIN_MARKER];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Merges the run marker (and, if given, the origin-platform marker) into an
+ * event's extendedProperties, preserving others.
+ */
+function withMarker(
+  event: PlatformRecord,
+  runId: string,
+  origin?: string,
+): PlatformRecord {
   const ext = (event['extendedProperties'] as Record<string, unknown>) ?? {};
   const priv = (ext['private'] as Record<string, unknown>) ?? {};
+  const nextPriv: Record<string, unknown> = { ...priv, [RUN_MARKER]: runId };
+  if (origin !== undefined) {
+    nextPriv[ORIGIN_MARKER] = origin;
+  }
   return {
     ...event,
-    extendedProperties: { ...ext, private: { ...priv, [RUN_MARKER]: runId } },
+    extendedProperties: { ...ext, private: nextPriv },
   };
 }
 
@@ -72,6 +94,7 @@ export class Driver {
       const payload = withMarker(
         id !== undefined ? { ...input, id } : { ...input },
         runId,
+        this.platform.name,
       );
       created.push(await client.create(resource, payload));
     }
@@ -200,5 +223,102 @@ export class StubReflector {
       await write.client.create(write.resource, this.mapping(event));
     }
     await drainWrites(write.client, write.resource);
+  }
+}
+
+/** One side of a bidirectional reflection: a platform and the calendar on it. */
+export interface Endpoint {
+  platform: FakePlatform;
+  calendar: string;
+}
+
+export interface BidirectionalReflectorOptions {
+  a: Endpoint;
+  b: Endpoint;
+  /** Reflection transform applied to each record (defaults to identity). */
+  mapping?: Mapping;
+  /**
+   * When true (the default), a record whose origin is not the platform being
+   * read is treated as an echo and skipped — this is the loop suppression under
+   * test. Set false to model a reflector that lacks it and pings-pongs.
+   */
+  suppressEchoes?: boolean;
+  /** Delay before a reflect cycle is applied, simulating async SUT processing. */
+  reflectDelayMs?: number;
+}
+
+/**
+ * A bidirectional stand-in reflector (A↔B) with the loop suppression a real
+ * Reflector needs: it never reflects the same source record twice
+ * (idempotent), and it skips echoes — records that originated on the other
+ * platform, which reflecting onward would bounce back and forth forever.
+ *
+ * Toggle `suppressEchoes` off to model the ping-pong bug the loop scenario is
+ * meant to catch.
+ */
+export class BidirectionalReflector {
+  private readonly mapping: Mapping;
+  private readonly suppress: boolean;
+  private readonly delayMs: number;
+  /** Keys (`<platform>:<id>`) already reflected, so repeated cycles are idempotent. */
+  private readonly reflected = new Set<string>();
+  private pending: Promise<void> = Promise.resolve();
+
+  constructor(private readonly opts: BidirectionalReflectorOptions) {
+    this.mapping = opts.mapping ?? identityMapping;
+    this.suppress = opts.suppressEchoes ?? true;
+    this.delayMs = opts.reflectDelayMs ?? 0;
+  }
+
+  /** Triggers one full A→B then B→A cycle for this run and returns immediately. */
+  reflectNow(runId: string): void {
+    this.pending = this.pending.then(() => this.reflectBoth(runId));
+  }
+
+  /** Resolves once any in-flight reflection has finished (for teardown). */
+  async idle(): Promise<void> {
+    await this.pending;
+  }
+
+  private async reflectBoth(runId: string): Promise<void> {
+    if (this.delayMs) {
+      await sleep(this.delayMs);
+    }
+    await this.reflectOnce(this.opts.a, this.opts.b, runId);
+    await this.reflectOnce(this.opts.b, this.opts.a, runId);
+  }
+
+  private async reflectOnce(
+    from: Endpoint,
+    to: Endpoint,
+    runId: string,
+  ): Promise<void> {
+    const read = await buildEventsClient(from.platform.fetchFor(from.calendar));
+    await read.client.sync();
+    const records = await read.client.list(read.resource);
+
+    const write = await buildEventsClient(to.platform.fetchFor(to.calendar));
+    let wrote = false;
+    for (const record of records) {
+      if (markerOf(record) !== runId) {
+        continue; // only this run's records
+      }
+      // Echo: this record originated elsewhere (it was reflected onto `from`),
+      // so reflecting it onward would start a loop.
+      if (this.suppress && originOf(record) !== from.platform.name) {
+        continue;
+      }
+      // Idempotent: never reflect the same source record twice.
+      const key = `${from.platform.name}:${String(record['id'])}`;
+      if (this.reflected.has(key)) {
+        continue;
+      }
+      this.reflected.add(key);
+      await write.client.create(write.resource, this.mapping(record));
+      wrote = true;
+    }
+    if (wrote) {
+      await drainWrites(write.client, write.resource);
+    }
   }
 }

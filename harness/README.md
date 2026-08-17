@@ -50,11 +50,26 @@ This harness is fully in-memory. To point it at real systems, replace:
 - `timeout` — the expected records did not appear within the poll window
   (distinct from appearing-but-wrong).
 
+## Loop/echo scenario
+
+`runLoopScenario` (`scenario.ts`) covers the bidirectional case: it drives N
+events onto A, then runs several full A→B→A reflect cycles through a
+`BidirectionalReflector`, and checks that both platforms settle at exactly N
+run-tagged records.
+
+The suppression this exercises rests on an **origin marker**: the driver stamps
+each record with the platform it originated on, the mapping carries that
+through reflection, and the reflector skips any record whose origin isn't the
+platform it's reading (an echo). It's also idempotent, so it never re-reflects
+a record it already produced. A reflector missing this (`suppressEchoes: false`)
+makes the counts grow without bound — reported as `looped`, the same way
+`mismatch` proves the content oracle catches a wrong reflection.
+
 ## Running
 
 ```sh
 pnpm install
-pnpm test:harness     # runs harness/reflection.test.ts
+pnpm test:harness     # runs harness/*.test.ts
 ```
 
 `pnpm test` (the unit suite) deliberately does **not** include this — keep the
@@ -65,9 +80,9 @@ APIs and is slower and flakier by nature.
 ## Known limitations of the stub
 
 - The stub reflector filters by the run marker; a real Reflector reflects by
-  change detection. Loop/echo suppression (does a reflected write on B bounce
-  back to A?) is therefore **not** exercised here — add it when the real SUT
-  is wired in.
+  change detection. The loop scenario models suppression with an origin marker
+  and an idempotency set (see above), which stands in for what a real SUT must
+  do.
 - The reviewer reads through `syncables`, so it shares the read path with the
   SUT. For a stronger oracle, read the target via its raw API instead — see the
   note on `Reviewer.readTagged`.

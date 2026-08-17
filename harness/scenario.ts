@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { FakePlatform, PlatformRecord } from './fake-platform.js';
 import {
   cleanupTagged,
+  markerOf,
+  type BidirectionalReflector,
   type Driver,
+  type Endpoint,
   type EventInput,
   type Reviewer,
   type StubReflector,
@@ -107,4 +110,49 @@ export async function runReflectionScenario(
 
 function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export type LoopOutcome =
+  | { status: 'stable'; counts: { a: number; b: number } }
+  | { status: 'looped'; counts: { a: number; b: number }; expected: number };
+
+export interface LoopScenario {
+  driver: Driver;
+  reflector: BidirectionalReflector;
+  /** The two sides being kept in sync (the driver writes onto `a`). */
+  a: Endpoint;
+  b: Endpoint;
+  events: EventInput[];
+  /** How many full A→B→A reflect cycles to run (default 3). */
+  cycles?: number;
+}
+
+/**
+ * Loop/echo test: drive N events onto A, run several full bidirectional
+ * reflect cycles, and check that both platforms settle at exactly N run-tagged
+ * records. A reflector that re-reflects its own writes makes the counts grow
+ * without bound — reported as `looped`.
+ */
+export async function runLoopScenario(s: LoopScenario): Promise<LoopOutcome> {
+  const runId = `run-${randomUUID()}`;
+  const cycles = s.cycles ?? 3;
+  const expected = s.events.length;
+
+  const tagged = (e: Endpoint): number =>
+    e.platform.events(e.calendar).filter((r) => markerOf(r) === runId).length;
+
+  try {
+    await s.driver.create(s.events, runId);
+    for (let i = 0; i < cycles; i += 1) {
+      s.reflector.reflectNow(runId);
+      await s.reflector.idle();
+    }
+    const counts = { a: tagged(s.a), b: tagged(s.b) };
+    return counts.a === expected && counts.b === expected
+      ? { status: 'stable', counts }
+      : { status: 'looped', counts, expected };
+  } finally {
+    cleanupTagged(s.a.platform, s.a.calendar, runId);
+    cleanupTagged(s.b.platform, s.b.calendar, runId);
+  }
 }
