@@ -19,4 +19,7 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run prettier:check
       - run: pnpm test
+      # In-memory today, so safe to gate on. Gate/remove once it talks to real
+      # platforms (needs secrets and would be flaky in CI).
+      - run: pnpm run test:harness
       - run: pnpm run build
