@@ -65,6 +65,26 @@ a record it already produced. A reflector missing this (`suppressEchoes: false`)
 makes the counts grow without bound — reported as `looped`, the same way
 `mismatch` proves the content oracle catches a wrong reflection.
 
+## Cross-shape mapping
+
+The default oracle deep-equals identical fields, which only fits a
+Calendar→Calendar reflection. To exercise the interesting part of a real
+Reflector — mapping between systems with **different record shapes** — a second
+target platform stores an agenda shape (`{ id, title, startsAt, endsAt }`)
+instead of Calendar's (`{ id, summary, start.dateTime, end.dateTime }`).
+syncables stores record bodies as opaque JSON, so this needs no second OpenAPI
+document; a fully separate API (paths/doc) would be a further step.
+
+- `calendarToAgenda` (`roles.ts`) is the reflector's transform.
+- `compareCalendarToAgenda` (`scenario.ts`) is a **mapping-aware oracle** that
+  validates the agenda records against the declared field mapping —
+  independently of the reflector's own implementation, so a dropped or
+  mis-mapped field is caught as `mismatch`.
+- Because the shapes differ, the run marker lives in different places
+  (Calendar in `extendedProperties.private`, agenda at top level), so `Reviewer`
+  and `cleanupTagged` take an injectable `MarkerReader` (`agendaMarkerOf` for
+  the agenda shape).
+
 ## Running
 
 ```sh
