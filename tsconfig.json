@@ -23,6 +23,6 @@
     "noImplicitThis": false,
     "strictNullChecks": true,
   },
-  "include": ["src", "__tests__", "examples"],
+  "include": ["src", "__tests__", "examples", "harness"],
   "exclude": ["docs"]
 }
