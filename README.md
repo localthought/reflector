@@ -74,6 +74,16 @@ use your process manager):
 | `REMOTESTORAGE_MODULE`       | no       | `reflector`                          | remoteStorage module (top-level directory) data is written under |
 | `REMOTESTORAGE_CLIENT_ID`    | no       | `${BASE_URL}`                        | OAuth `client_id` presented to the remoteStorage provider       |
 | `REMOTESTORAGE_REDIRECT_URI` | no       | `${BASE_URL}/remotestorage/callback` | remoteStorage OAuth redirect URI                                |
+| `OPENAPI_PATH`               | no       | `spec/google-calendar-v3.openapi.yaml` | OpenAPI document the app is derived from — point it at another API to sync something other than Calendar |
+| `OVERLAY_DIR`                | no       | `spec/overlays`                      | Directory of overlays (`auth`/`pagination`/`crud-causality`) applied to that document |
+
+`OPENAPI_PATH` / `OVERLAY_DIR` are what make Reflector API-agnostic: swap in a
+different document + overlays and the whole flow (OAuth or token auth, resource
+discovery, pagination, CRUD) follows it, with no code change. For pointing two
+endpoints at two systems at once, see
+[Reflecting between two systems](#reflecting-between-two-systems-eg-two-github-issue-trackers)
+below, which adds `OPENAPI_PATH_A` / `OPENAPI_PATH_B` (and their `OVERLAY_DIR_*`
+counterparts).
 
 The `OAUTH_*` names are generic; the historical `GOOGLE_CALENDAR_CLIENT_ID` /
 `GOOGLE_CALENDAR_CLIENT_SECRET` / `GOOGLE_REDIRECT_URI` are still accepted as
@@ -88,6 +98,72 @@ and add `http://localhost:3000/auth/callback` as an authorized redirect URI.
 The scopes requested are whatever the document's `oauth` security scheme
 declares — for the vendored Calendar overlay that is `calendar`,
 `userinfo.email`, and `openid`.
+
+### Reflecting between two systems (e.g. two GitHub issue trackers)
+
+Beyond syncing one system into a local copy, Reflector can **actively reflect
+records between two endpoints** — A and B — mirroring changes each way. The
+motivating case is two **GitHub issue trackers**: issues created on one are
+copied to the other, open/closed state is kept in agreement, and comments are
+copied across, so the two trackers stay in step.
+
+> **Status.** The two-endpoint **configuration** described here (the
+> `OPENAPI_PATH_*` / `REFLECT_*` variables) is in place and validated. The
+> reflection **engine** that consumes it — the reflect loop, the origin markers,
+> the id-map, state and comment reflection — is being built across
+> [#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)
+> (and needs [localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6)).
+> The variables are documented here so a deployment can be wired up against a
+> stable surface as those land.
+
+**Each endpoint is derived from its own document + overlays.** A and B do not
+have to share a schema — you can point both at the GitHub Issues document, or at
+two different systems entirely. Where their record shapes differ, reconciling
+them is a later **Devonian** mapping step (out of scope for the base engine);
+the config already keeps the two documents separate so that work has somewhere
+to plug in.
+
+| Variable             | Required | Default          | Purpose                                                                 |
+| -------------------- | -------- | ---------------- | ----------------------------------------------------------------------- |
+| `REFLECT_A_REPO`     | for A↔B  | —                | What endpoint A targets, e.g. a GitHub `owner/repo`. Reflection is enabled only when both A and B are set |
+| `REFLECT_B_REPO`     | for A↔B  | —                | What endpoint B targets                                                 |
+| `REFLECT_A_TOKEN`    | for A↔B  | —                | Endpoint A's API token (e.g. a GitHub PAT). Secret; sent as a bearer, no OAuth flow |
+| `REFLECT_B_TOKEN`    | for A↔B  | —                | Endpoint B's API token                                                  |
+| `OPENAPI_PATH_A`     | no       | `OPENAPI_PATH`   | OpenAPI document for endpoint A (falls back to the shared `OPENAPI_PATH`) |
+| `OPENAPI_PATH_B`     | no       | `OPENAPI_PATH`   | OpenAPI document for endpoint B                                          |
+| `OVERLAY_DIR_A`      | no       | `OVERLAY_DIR`    | Overlays for endpoint A (falls back to the shared `OVERLAY_DIR`)        |
+| `OVERLAY_DIR_B`      | no       | `OVERLAY_DIR`    | Overlays for endpoint B                                                 |
+| `REFLECT_DIRECTION`  | no       | `bidirectional`  | `bidirectional` (A↔B) or `a-to-b` (one-way)                             |
+| `REFLECT_INTERVAL_MS`| no       | `60000`          | How often the background reflect loop runs                              |
+
+**GitHub setup.** Point both endpoints at the GitHub Issues document and
+overlays, and give each a token for its repo:
+
+```sh
+# The GitHub Issues document + overlays (vendored; see #23). The overlays
+# themselves live in localthought/overlays under
+# github.com/api.github.com/1.1.4 and are applied to the vendored document.
+OPENAPI_PATH=spec/github-issues.openapi.yaml
+OVERLAY_DIR=spec/overlays/github
+
+REFLECT_A_REPO=octo/source     REFLECT_A_TOKEN=ghp_...
+REFLECT_B_REPO=octo/mirror     REFLECT_B_TOKEN=ghp_...
+REFLECT_DIRECTION=bidirectional
+REFLECT_INTERVAL_MS=60000
+```
+
+The GitHub token is a **personal access token** (or installation token) with
+`repo`/`issues` scope on the repositories involved — a static bearer, so there
+is no OAuth redirect and no `OAUTH_*` client for this mode. Because GitHub
+issues and comments have no metadata side-channel, each reflected record carries
+a hidden HTML comment (`<!-- reflector:origin … -->`) in its body linking it back
+to the original; that marker is how Reflector tells an original from a copy and
+avoids reflecting a copy back again.
+
+**Persistence.** Reflection keeps a `source↔target` id-map (plus the two tokens)
+that **must survive restarts**. On a durable-disk host it lives under `DATA_DIR`;
+on an ephemeral host (a Heroku dyno, DO App Platform) set `DATABASE_URL` so it is
+kept in Postgres — the same requirement as [Multiple users](#multiple-users).
 
 ### Where tokens live
 
