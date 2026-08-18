@@ -1,7 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config/index.js';
 
-const ENV_KEYS = ['BASE_URL', 'PORT', 'HEROKU_APP_DEFAULT_DOMAIN_NAME'];
+const ENV_KEYS = [
+  'BASE_URL',
+  'PORT',
+  'HEROKU_APP_DEFAULT_DOMAIN_NAME',
+  'OPENAPI_PATH',
+  'OPENAPI_PATH_A',
+  'OPENAPI_PATH_B',
+  'OVERLAY_DIR_A',
+  'OVERLAY_DIR_B',
+  'REFLECT_A_REPO',
+  'REFLECT_B_REPO',
+  'REFLECT_A_TOKEN',
+  'REFLECT_B_TOKEN',
+  'REFLECT_DIRECTION',
+  'REFLECT_INTERVAL_MS',
+];
 const originalEnv = Object.fromEntries(
   ENV_KEYS.map((key) => [key, process.env[key]]),
 );
@@ -53,5 +68,46 @@ describe('loadConfig baseUrl', () => {
     const config = loadConfig();
     expect(config.baseUrl).toBe('https://example.com');
     expect(config.oauth.redirectUri).toBe('https://example.com/auth/callback');
+  });
+});
+
+describe('loadConfig reflection', () => {
+  it('is disabled by default and both endpoints fall back to the shared document', () => {
+    for (const key of [
+      'REFLECT_A_REPO',
+      'REFLECT_B_REPO',
+      'OPENAPI_PATH_A',
+      'OPENAPI_PATH_B',
+    ]) {
+      delete process.env[key];
+    }
+    const { reflection, openApiPath } = loadConfig();
+    expect(reflection.enabled).toBe(false);
+    expect(reflection.direction).toBe('bidirectional');
+    expect(reflection.intervalMs).toBe(60_000);
+    // No per-endpoint document set → both fall back to the shared path.
+    expect(reflection.a.openApiPath).toBe(openApiPath);
+    expect(reflection.b.openApiPath).toBe(openApiPath);
+  });
+
+  it('enables the loop when both endpoints name a target and keeps A/B documents separate', () => {
+    process.env.REFLECT_A_REPO = 'octo/source';
+    process.env.REFLECT_B_REPO = 'octo/mirror';
+    process.env.REFLECT_A_TOKEN = 'tok-a';
+    process.env.REFLECT_B_TOKEN = 'tok-b';
+    process.env.OPENAPI_PATH_A = '/specs/a.yaml';
+    process.env.OPENAPI_PATH_B = '/specs/b.yaml';
+    process.env.REFLECT_DIRECTION = 'a-to-b';
+    process.env.REFLECT_INTERVAL_MS = '5000';
+    const { reflection } = loadConfig();
+    expect(reflection.enabled).toBe(true);
+    expect(reflection.direction).toBe('a-to-b');
+    expect(reflection.intervalMs).toBe(5000);
+    expect(reflection.a.target).toBe('octo/source');
+    expect(reflection.b.target).toBe('octo/mirror');
+    expect(reflection.a.token).toBe('tok-a');
+    expect(reflection.a.openApiPath).toBe('/specs/a.yaml');
+    expect(reflection.b.openApiPath).toBe('/specs/b.yaml');
+    expect(reflection.a.openApiPath).not.toBe(reflection.b.openApiPath);
   });
 });
