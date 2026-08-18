@@ -99,7 +99,10 @@ class FakeGitHub {
       const found = this.issues(repo).find((i) => i.number === number);
       if (!found) return new Response('not found', { status: 404 });
       const b = JSON.parse(String(init?.body ?? '{}')) as Partial<Issue>;
-      Object.assign(found, b);
+      // Like GitHub, only mutable fields are applied; id/number are immutable.
+      if (typeof b.state === 'string') found.state = b.state;
+      if (typeof b.title === 'string') found.title = b.title;
+      if (typeof b.body === 'string') found.body = b.body;
       return json(found);
     }
     return new Response('not found', { status: 404 });
@@ -229,5 +232,39 @@ describe('ReflectionEngine (issues)', () => {
       .map((i) => i.title)
       .sort();
     expect(aTitles).toEqual(['From A', 'From B']);
+  });
+
+  it('propagates open/closed state both ways without bouncing', async () => {
+    const fake = new FakeGitHub();
+    fake.seed('octo/a', [
+      { number: 1, title: 'Bug', body: 'x', state: 'open' },
+    ]);
+    fake.seed('octo/b', []);
+    const [a, b] = sides(fake);
+    const engine = new ReflectionEngine(a, b, new InMemoryIdMap(), {
+      retry: RETRY,
+      drainTimeoutMs: 2000,
+    });
+
+    // Reflect the issue, then close the ORIGINAL on A.
+    await engine.reflect();
+    const copyNumber = fake.issues('octo/b')[0]!.number;
+    fake.issues('octo/a')[0]!.state = 'closed';
+
+    const closed = await engine.reflect();
+    expect(fake.issues('octo/b')[0]!.state).toBe('closed');
+    expect(closed.updated).toHaveLength(1);
+
+    // Stable: another pass changes nothing.
+    const stable = await engine.reflect();
+    expect(stable.updated).toEqual([]);
+    expect(fake.issues('octo/a')[0]!.state).toBe('closed');
+    expect(fake.issues('octo/b')[0]!.state).toBe('closed');
+
+    // Reopen the COPY on B — the change flows back to the original on A.
+    fake.issues('octo/b').find((i) => i.number === copyNumber)!.state = 'open';
+    await engine.reflect();
+    expect(fake.issues('octo/a')[0]!.state).toBe('open');
+    expect(fake.issues('octo/b')[0]!.state).toBe('open');
   });
 });
