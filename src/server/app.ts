@@ -16,6 +16,7 @@ import {
 } from '../oauth/oauth.js';
 import type { RemoteStorageManager } from '../remotestorage/manager.js';
 import { buildZip } from '../sync/zip.js';
+import type { ReflectionService } from '../reflect/service.js';
 import type { ActiveSession, SessionManager } from './session.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -59,10 +60,27 @@ export function createApp(
   sessions: SessionManager,
   profile: AuthProfile,
   remoteStorage: RemoteStorageManager,
+  reflection?: ReflectionService,
 ): Express {
   const app = express();
   app.use(express.json({ limit: '5mb' }));
   app.use('/assets', express.static(publicDir));
+
+  // Reflection mode: expose the status of the background reflect loop and a
+  // "reflect now" trigger that runs one pass on demand (the seam a live-test
+  // harness kicks). Both go through the service's serialized chain.
+  if (reflection) {
+    app.get('/api/reflect/status', (_req, res) => {
+      res.json(reflection.status());
+    });
+    app.post(
+      '/api/reflect',
+      asyncRoute(async (_req, res) => {
+        const summary = await reflection.reflectNow();
+        res.json(summary);
+      }),
+    );
+  }
 
   const configured = (): boolean =>
     Boolean(config.oauth.clientId && config.oauth.clientSecret);
