@@ -70,6 +70,15 @@ function firstServerUrl(document: OpenApiDocument): string {
 }
 
 /**
+ * The API base (`servers[0].url`) of a document, independent of the auth
+ * scheme — used by token-based auth (e.g. a GitHub PAT) where there is no
+ * OAuth flow to derive a full {@link AuthProfile} from.
+ */
+export function deriveApiBase(document: OpenApiDocument): string {
+  return firstServerUrl(document);
+}
+
+/**
  * Picks the OAuth `authorizationCode` security scheme out of the document and
  * turns it, plus the server URL, into an {@link AuthProfile}. This is the one
  * place the flow's shape is read from the document; the rest of the app just
