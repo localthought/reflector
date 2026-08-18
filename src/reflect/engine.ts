@@ -101,6 +101,7 @@ export class ReflectionEngine {
       await this.reflectCreates(b, a, summary);
     }
     await this.reflectState(a, b, summary);
+    await this.reflectComments(this.a, this.b, summary);
     return summary;
   }
 
@@ -288,6 +289,147 @@ export class ReflectionEngine {
         });
       }
     }
+  }
+
+  /**
+   * Reflects comments for every linked issue pair. A comment added on one
+   * issue is copied under the counterpart issue on the other side, with a
+   * hidden marker linking it back — so a copy is never reflected again (echo
+   * suppression) or duplicated (id-map + destination marker scan). Create-only:
+   * editing/deleting a reflected comment is out of scope.
+   */
+  private async reflectComments(
+    aSide: ReflectionSide,
+    bSide: ReflectionSide,
+    summary: ReflectionSummary,
+  ): Promise<void> {
+    for (const pair of this.idMap.links('issue')) {
+      const aEnd = endFor(pair, aSide.system);
+      const bEnd = endFor(pair, bSide.system);
+      if (!aEnd || !bEnd) {
+        continue;
+      }
+      await this.reflectCommentsOneWay(aSide, aEnd.id, bSide, bEnd.id, summary);
+      if (this.direction === 'bidirectional') {
+        await this.reflectCommentsOneWay(
+          bSide,
+          bEnd.id,
+          aSide,
+          aEnd.id,
+          summary,
+        );
+      }
+    }
+  }
+
+  private async reflectCommentsOneWay(
+    from: ReflectionSide,
+    fromIssueId: string,
+    to: ReflectionSide,
+    toIssueId: string,
+    summary: ReflectionSummary,
+  ): Promise<void> {
+    const src = this.commentClient(from, fromIssueId);
+    const dst = this.commentClient(to, toIssueId);
+    await src.client.sync();
+    await dst.client.sync();
+    const sources = await src.client.list(src.url);
+    const destComments = await dst.client.list(dst.url);
+
+    const existing = new Map<string, string>();
+    for (const comment of destComments) {
+      const marker = parseMarker(bodyOf(comment));
+      if (marker?.kind === 'comment' && marker.system === from.system) {
+        existing.set(marker.id, String(comment[dst.idField]));
+      }
+    }
+
+    for (const comment of sources) {
+      const id = String(comment[src.idField]);
+      const marker = parseMarker(bodyOf(comment));
+      if (marker && marker.system === to.system) {
+        continue; // echo: this comment is itself a copy of a `to`-side comment
+      }
+      const known =
+        this.idMap.counterpart('comment', from.system, id) ??
+        (existing.has(id)
+          ? { system: to.system, id: existing.get(id)! }
+          : undefined);
+      if (known) {
+        await this.idMap.link(
+          'comment',
+          { system: from.system, id },
+          { system: to.system, id: known.id },
+        );
+        continue;
+      }
+
+      try {
+        const body = embedMarker(stripMarker(bodyOf(comment)), {
+          system: from.system,
+          kind: 'comment',
+          id,
+        });
+        await dst.client.create(dst.url, { body });
+        await this.drain(dst.client, dst.url);
+        const copies = await dst.client.list(dst.url);
+        const copy = copies.find((c) => {
+          const m = parseMarker(bodyOf(c));
+          return (
+            m?.kind === 'comment' && m.system === from.system && m.id === id
+          );
+        });
+        if (!copy) {
+          throw new Error('created comment copy not found after write settled');
+        }
+        await this.idMap.link(
+          'comment',
+          { system: from.system, id },
+          { system: to.system, id: String(copy[dst.idField]) },
+        );
+        summary.created.push({
+          kind: 'comment',
+          from: `${from.system}#${fromIssueId}/${id}`,
+          to: `${to.system}#${toIssueId}/${String(copy[dst.idField])}`,
+        });
+      } catch (error) {
+        summary.errors.push({
+          kind: 'comment',
+          from: `${from.system}#${fromIssueId}/${id}`,
+          error: message(error),
+        });
+      }
+    }
+  }
+
+  /**
+   * A syncables client for one issue's comments. GitHub addresses a single
+   * comment at a path that is not a child of the comments collection, which
+   * the resource pairing can't model, so — since reflection only lists and
+   * creates comments — the subset is given a synthetic direct-child item path
+   * purely so the collection is discovered. The item path is never requested.
+   */
+  private commentClient(
+    side: ReflectionSide,
+    issueId: string,
+  ): { client: ApiClient; url: string; idField: string } {
+    const collection = requireCollection(side.model, 'issueComments');
+    const url = collection.collectionUrl;
+    const base = subsetDocument(side.document, [url]);
+    const document: OpenApiDocument = {
+      ...base,
+      paths: { ...base.paths, [`${url}/{comment_id}`]: {} },
+    };
+    const client = createApiClient(document, {
+      baseUrl: SYNCABLES_BASE_URL,
+      fetch: side.auth.authorizedFetch({
+        ...side.context,
+        issue_number: issueId,
+      }),
+      identityField: collection.idField,
+      retry: this.retry,
+    });
+    return { client, url, idField: collection.idField };
   }
 
   private async setState(

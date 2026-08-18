@@ -22,9 +22,15 @@ interface Issue {
   state: string;
 }
 
+interface Comment {
+  id: number;
+  body: string;
+}
+
 /** A tiny in-memory GitHub Issues API for two repositories. */
 class FakeGitHub {
   private readonly repos = new Map<string, Issue[]>();
+  private readonly commentStore = new Map<string, Comment[]>();
   private seq = 1000;
 
   seed(repo: string, issues: Omit<Issue, 'id'>[]): void {
@@ -36,6 +42,19 @@ class FakeGitHub {
 
   issues(repo: string): Issue[] {
     return this.repos.get(repo) ?? [];
+  }
+
+  comments(repo: string, issueNumber: number): Comment[] {
+    return this.commentStore.get(`${repo}#${issueNumber}`) ?? [];
+  }
+
+  addComment(repo: string, issueNumber: number, body: string): Comment {
+    const key = `${repo}#${issueNumber}`;
+    const list = this.commentStore.get(key) ?? [];
+    const comment = { id: (this.seq += 1), body };
+    list.push(comment);
+    this.commentStore.set(key, list);
+    return comment;
   }
 
   /** An AuthorizedFetcher bound to a repo context, routing to this store. */
@@ -66,11 +85,26 @@ class FakeGitHub {
   private route(method: string, path: string, init?: RequestInit): Response {
     const list = /^\/repos\/([^/]+)\/([^/]+)\/issues$/.exec(path);
     const item = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)$/.exec(path);
+    const comments = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/comments$/.exec(
+      path,
+    );
     const json = (data: unknown, status = 200): Response =>
       new Response(JSON.stringify(data), {
         status,
         headers: { 'Content-Type': 'application/json' },
       });
+
+    if (comments) {
+      const repo = `${comments[1]}/${comments[2]}`;
+      const number = Number(comments[3]);
+      if (method === 'GET') {
+        return json(this.comments(repo, number));
+      }
+      if (method === 'POST') {
+        const b = JSON.parse(String(init?.body ?? '{}')) as { body?: string };
+        return json(this.addComment(repo, number, b.body ?? ''), 201);
+      }
+    }
 
     if (list) {
       const repo = `${list[1]}/${list[2]}`;
@@ -266,5 +300,52 @@ describe('ReflectionEngine (issues)', () => {
     await engine.reflect();
     expect(fake.issues('octo/a')[0]!.state).toBe('open');
     expect(fake.issues('octo/b')[0]!.state).toBe('open');
+  });
+
+  it('reflects comments under the counterpart issue both ways, no dupes or echoes', async () => {
+    const fake = new FakeGitHub();
+    fake.seed('octo/a', [
+      { number: 1, title: 'Bug', body: 'x', state: 'open' },
+    ]);
+    fake.seed('octo/b', []);
+    const [a, b] = sides(fake);
+    const engine = new ReflectionEngine(a, b, new InMemoryIdMap(), {
+      retry: RETRY,
+      drainTimeoutMs: 2000,
+    });
+
+    await engine.reflect(); // creates the copy issue on B
+    const copyNumber = fake.issues('octo/b')[0]!.number;
+
+    // Comment on A's original — it lands under B's copy, marked.
+    const c1 = fake.addComment('octo/a', 1, 'first reply');
+    await engine.reflect();
+    const bComments = fake.comments('octo/b', copyNumber);
+    expect(bComments).toHaveLength(1);
+    expect(bComments[0]!.body).toContain('first reply');
+    expect(parseMarker(bComments[0]!.body)).toEqual({
+      system: 'octo/a',
+      kind: 'comment',
+      id: String(c1.id),
+    });
+
+    // Idempotent + no echo back.
+    await engine.reflect();
+    expect(fake.comments('octo/b', copyNumber)).toHaveLength(1);
+    expect(fake.comments('octo/a', 1)).toHaveLength(1);
+
+    // Comment on B's copy — reflected back under A's original.
+    fake.addComment('octo/b', copyNumber, 'reply on the mirror');
+    await engine.reflect();
+    const aComments = fake.comments('octo/a', 1);
+    expect(aComments).toHaveLength(2);
+    expect(aComments.some((c) => c.body.includes('reply on the mirror'))).toBe(
+      true,
+    );
+
+    // Still stable on another pass.
+    await engine.reflect();
+    expect(fake.comments('octo/a', 1)).toHaveLength(2);
+    expect(fake.comments('octo/b', copyNumber)).toHaveLength(2);
   });
 });
