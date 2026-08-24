@@ -424,6 +424,26 @@ once. If that step is skipped (e.g. `--ignore-scripts`), build it manually:
 cd node_modules/syncables && npm install && npm run build:release
 ```
 
+## Generative AI use
+
+Reflector is developed collaboratively with **Claude Code** (Anthropic), an
+agentic coding assistant: a human directs the architecture and reviews,
+edits, and tests the changes it proposes before they're committed.
+
+As an NLnet-funded project, this follows
+[NLnet's Generative AI policy](https://nlnet.nl/foundation/policies/generativeAI/):
+
+- Commits produced with AI assistance carry a `Claude-Session: <url>`
+  trailer identifying the session that produced them.
+- [`docs/ai-logs/`](docs/ai-logs) holds prompt/output disclosure logs for
+  sessions going forward, redacted for secrets and personal information, per
+  the policy's terms for a project that was already ongoing before the
+  policy took effect (no retroactive backfill of every past session; known
+  historical session links are indexed as pending in
+  [`docs/ai-logs/pending-historical-sessions.md`](docs/ai-logs/pending-historical-sessions.md)).
+- AI-drafted content is reviewed and edited by a human before being
+  committed; it is not represented as unassisted human work.
+
 ## License
 
 Apache-2.0
