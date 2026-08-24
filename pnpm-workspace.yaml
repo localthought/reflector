@@ -1,2 +1,5 @@
 onlyBuiltDependencies:
   - esbuild
+  # syncables is consumed as a git dependency and builds from source on install
+  # via its own `prepare` script; allow that build to run.
+  - syncables

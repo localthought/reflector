@@ -17,12 +17,22 @@ export const SYNCABLES_BASE_URL = 'https://api.reflector.local';
 export type PathParams = Record<string, string>;
 
 /**
+ * Anything that can hand the syncables client a `fetch` bound to a connected
+ * account's credentials. Both the OAuth {@link TokenManager} and the static
+ * {@link StaticTokenManager} implement it, so the sync/reflection layers don't
+ * care which auth style an endpoint uses.
+ */
+export interface AuthorizedFetcher {
+  authorizedFetch(params?: PathParams): typeof fetch;
+}
+
+/**
  * Owns a connected account's token set, refreshing it as it nears expiry and
  * handing out `fetch` implementations for the syncables client to use. It is
  * driven entirely by an {@link AuthProfile}, so it targets whatever API the
  * OpenAPI document describes — there is nothing provider-specific here.
  */
-export class TokenManager {
+export class TokenManager implements AuthorizedFetcher {
   private tokens: OAuthTokens;
   private refreshing: Promise<OAuthTokens> | undefined;
 

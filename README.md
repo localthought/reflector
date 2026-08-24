@@ -107,14 +107,15 @@ motivating case is two **GitHub issue trackers**: issues created on one are
 copied to the other, open/closed state is kept in agreement, and comments are
 copied across, so the two trackers stay in step.
 
-> **Status.** The two-endpoint **configuration** described here (the
-> `OPENAPI_PATH_*` / `REFLECT_*` variables) is in place and validated. The
-> reflection **engine** that consumes it — the reflect loop, the origin markers,
-> the id-map, state and comment reflection — is being built across
-> [#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)
-> (and needs [localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6)).
-> The variables are documented here so a deployment can be wired up against a
-> stable surface as those land.
+> **Status.** The reflection engine is implemented: the background loop, the
+> hidden origin markers, the persisted id-map, and issue / open-closed-state /
+> comment reflection ([#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)),
+> plus the GitHub-shape support it needs in the sync engine
+> ([localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6),
+> merged). It runs against a faithful in-memory GitHub in the test suite. The
+> one remaining step before a live deploy is publishing the updated `syncables`
+> to npm and bumping this app's dependency to it (the merged fixes are on
+> `syncables` `main`, not yet in a released version).
 
 **Each endpoint is derived from its own document + overlays.** A and B do not
 have to share a schema — you can point both at the GitHub Issues document, or at
@@ -159,6 +160,13 @@ issues and comments have no metadata side-channel, each reflected record carries
 a hidden HTML comment (`<!-- reflector:origin … -->`) in its body linking it back
 to the original; that marker is how Reflector tells an original from a copy and
 avoids reflecting a copy back again.
+
+**Running it.** When both `REFLECT_*_REPO` are set the app starts a background
+loop that reflects every `REFLECT_INTERVAL_MS`. You can also trigger a pass on
+demand with `POST /api/reflect` (it returns a summary of what it created and the
+state changes it propagated), and inspect the loop with `GET /api/reflect/status`.
+In this mode the interactive Google "Connect" flow is disabled — a token-auth
+instance has no OAuth client.
 
 **Persistence.** Reflection keeps a `source↔target` id-map (plus the two tokens)
 that **must survive restarts**. On a durable-disk host it lives under `DATA_DIR`;

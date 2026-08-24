@@ -26,10 +26,24 @@ const OVERLAY_FILES = [
 export async function buildDocument(
   config: ReflectorConfig,
 ): Promise<OpenApiDocument> {
-  let document = await loadOpenApiDocument(config.openApiPath);
+  return buildDocumentFrom(config.openApiPath, config.overlayDir);
+}
+
+/**
+ * Builds a prepared document from an explicit document path + overlay
+ * directory, applying the same overlays and normalization as
+ * {@link buildDocument}. Used to prepare each reflection endpoint's own
+ * document (which may differ from the shared one), keyed off the per-endpoint
+ * `OPENAPI_PATH_*` / `OVERLAY_DIR_*` configuration.
+ */
+export async function buildDocumentFrom(
+  openApiPath: string,
+  overlayDir: string,
+): Promise<OpenApiDocument> {
+  let document = await loadOpenApiDocument(openApiPath);
   for (const file of OVERLAY_FILES) {
     const overlay = await loadYamlFile<OverlayDocument>(
-      `${config.overlayDir}/${file}`,
+      `${overlayDir}/${file}`,
     );
     document = applyOverlay(document, overlay);
   }
