@@ -82,8 +82,20 @@ export function createApp(
     );
   }
 
+  // True only when there's an actual authorization endpoint to send the
+  // browser to. Client id/secret alone aren't enough: a document that has no
+  // oauth2 authorizationCode flow (or failed to derive one) falls back to an
+  // inert `AuthProfile` with an empty `authorizationUrl` — building the
+  // consent-screen URL from that yields a bare `?query` string, which the
+  // browser resolves as a redirect back to the *current* path, looping
+  // `/auth/login` on itself forever (ERR_TOO_MANY_REDIRECTS).
   const configured = (): boolean =>
-    Boolean(config.oauth.clientId && config.oauth.clientSecret);
+    Boolean(
+      config.oauth.clientId &&
+        config.oauth.clientSecret &&
+        profile.authorizationUrl &&
+        profile.tokenUrl,
+    );
 
   const requireSession = (
     req: Request,
@@ -107,8 +119,12 @@ export function createApp(
       res
         .status(500)
         .send(
-          'OAuth is not configured. Set OAUTH_CLIENT_ID and ' +
-            'OAUTH_CLIENT_SECRET and restart.',
+          !profile.authorizationUrl || !profile.tokenUrl
+            ? 'This Reflector instance has no interactive OAuth flow to ' +
+                'connect through (the configured document declares no ' +
+                'oauth2 authorizationCode security scheme).'
+            : 'OAuth is not configured. Set OAUTH_CLIENT_ID and ' +
+                'OAUTH_CLIENT_SECRET and restart.',
         );
       return;
     }
