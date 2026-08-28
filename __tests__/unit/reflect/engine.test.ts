@@ -75,14 +75,24 @@ class FakeGitHub {
               .replaceAll(`%7B${k}%7D`, v)
               .replaceAll(`%7b${k}%7d`, v);
           }
-          return this.route((init?.method ?? 'GET').toUpperCase(), path, init);
+          return this.route(
+            (init?.method ?? 'GET').toUpperCase(),
+            path,
+            init,
+            url.searchParams,
+          );
         };
         return impl as typeof fetch;
       },
     };
   }
 
-  private route(method: string, path: string, init?: RequestInit): Response {
+  private route(
+    method: string,
+    path: string,
+    init?: RequestInit,
+    query: URLSearchParams = new URLSearchParams(),
+  ): Response {
     const list = /^\/repos\/([^/]+)\/([^/]+)\/issues$/.exec(path);
     const item = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)$/.exec(path);
     const comments = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)\/comments$/.exec(
@@ -110,7 +120,13 @@ class FakeGitHub {
       const repo = `${list[1]}/${list[2]}`;
       const issues = this.issues(repo);
       if (method === 'GET') {
-        return json(issues);
+        // Like GitHub, list only open issues unless state=all/closed is asked.
+        const stateFilter = query.get('state') ?? 'open';
+        const filtered =
+          stateFilter === 'all'
+            ? issues
+            : issues.filter((i) => i.state === stateFilter);
+        return json(filtered);
       }
       if (method === 'POST') {
         const b = JSON.parse(String(init?.body ?? '{}')) as Partial<Issue>;

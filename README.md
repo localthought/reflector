@@ -107,15 +107,17 @@ motivating case is two **GitHub issue trackers**: issues created on one are
 copied to the other, open/closed state is kept in agreement, and comments are
 copied across, so the two trackers stay in step.
 
-> **Status.** The reflection engine is implemented: the background loop, the
-> hidden origin markers, the persisted id-map, and issue / open-closed-state /
-> comment reflection ([#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)),
-> plus the GitHub-shape support it needs in the sync engine
+> **Status.** The reflection engine is implemented and validated **live**
+> against two real GitHub repositories — create, idempotent re-runs, open/closed
+> state both ways, and comments — as well as in the test suite against a faithful
+> in-memory GitHub. It covers the background loop, the hidden origin markers, the
+> persisted id-map, and issue / open-closed-state / comment reflection
+> ([#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)),
+> plus the GitHub-shape support in the sync engine
 > ([localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6),
-> merged). It runs against a faithful in-memory GitHub in the test suite. The
-> one remaining step before a live deploy is publishing the updated `syncables`
-> to npm and bumping this app's dependency to it (the merged fixes are on
-> `syncables` `main`, not yet in a released version).
+> released in `syncables` 0.17.1). This app currently pins that `syncables`
+> commit as a git dependency; it can move to the npm release once 0.17.1 is
+> republished there.
 
 **Each endpoint is derived from its own document + overlays.** A and B do not
 have to share a schema — you can point both at the GitHub Issues document, or at

@@ -111,7 +111,10 @@ export class ReflectionEngine {
       subsetDocument(side.document, collection.paths),
       {
         baseUrl: SYNCABLES_BASE_URL,
-        fetch: side.auth.authorizedFetch(side.context),
+        fetch: withListQuery(
+          side.auth.authorizedFetch(side.context),
+          collection.listQuery,
+        ),
         identityField: collection.idField,
         retry: this.retry,
       },
@@ -432,13 +435,37 @@ export class ReflectionEngine {
     return { client, url, idField: collection.idField };
   }
 
+  /**
+   * Applies a minimal `{ state }` PATCH to one issue. This goes directly through
+   * the side's authorized fetch rather than syncables' `update`, because
+   * syncables sends the whole record as the body — and GitHub rejects a PATCH
+   * that echoes its read-only fields (user, labels, …) with a 422. Only the
+   * changed field is sent.
+   */
   private async setState(
     target: Bound,
     id: string,
     state: string,
   ): Promise<void> {
-    await target.client.update(target.collection.collectionUrl, id, { state });
-    await this.drain(target.client, target.collection.collectionUrl);
+    const idParam =
+      pathVars(target.collection.itemUrl).find(
+        (v) => !target.collection.contextParams.includes(v),
+      ) ?? 'id';
+    const fetchImpl = target.side.auth.authorizedFetch({
+      ...target.side.context,
+      [idParam]: id,
+    });
+    const response = await fetchImpl(
+      `${SYNCABLES_BASE_URL}${target.collection.itemUrl}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state }),
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`state update failed with status ${response.status}`);
+    }
   }
 
   /** Waits until the client has no pending background writes for `collectionUrl`. */
@@ -476,6 +503,44 @@ function requireCollection(
 
 function bodyOf(record: Record<string, unknown>): string {
   return typeof record['body'] === 'string' ? record['body'] : '';
+}
+
+/** The `{...}` path variables in a URL template. */
+function pathVars(template: string): string[] {
+  return [...template.matchAll(/\{([^}]+)\}/g)].map((m) => m[1] as string);
+}
+
+/**
+ * Wraps a fetch so a collection's fixed list-query params (e.g. GitHub's
+ * `state=all`) are added to GET requests. Applied to the syncables-issued URL
+ * before the auth layer retargets it at the real API base — which preserves
+ * the query string — and only sets a param that isn't already present, so it
+ * doesn't override the pagination `Link` follow-ups.
+ */
+function withListQuery(
+  fetchImpl: typeof fetch,
+  listQuery: Record<string, string> | undefined,
+): typeof fetch {
+  if (!listQuery || Object.keys(listQuery).length === 0) {
+    return fetchImpl;
+  }
+  const wrapped = async (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') {
+      return fetchImpl(input, init);
+    }
+    const url = new URL(typeof input === 'string' ? input : input.toString());
+    for (const [key, value] of Object.entries(listQuery)) {
+      if (!url.searchParams.has(key)) {
+        url.searchParams.set(key, value);
+      }
+    }
+    return fetchImpl(url.toString(), init);
+  };
+  return wrapped as typeof fetch;
 }
 
 function stateOf(record: Record<string, unknown>): string {
