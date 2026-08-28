@@ -27,6 +27,13 @@ export interface ManagedCollection {
   generatesId: boolean;
   /** Pattern the generated id must match, from the create op's `addedFields.id.schema.pattern`. */
   idPattern?: string;
+  /**
+   * Fixed query parameters to add to the list request, from the collection's
+   * `x-list-query`. GitHub's issues list defaults to open issues only, so the
+   * overlay declares `{ state: all }` to include closed ones — without it a
+   * closed record drops out of the sync and its state change can't be reflected.
+   */
+  listQuery?: Record<string, string>;
   /** `[collectionUrl, itemUrl]`, ready to hand to `subsetDocument`. */
   paths: string[];
 }
@@ -54,6 +61,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function pathVariables(template: string): string[] {
   return [...template.matchAll(/\{([^}]+)\}/g)].map((m) => m[1] as string);
+}
+
+/** Reads a collection's `x-list-query` into a string map of fixed list params. */
+function listQueryOf(collection: Record<string, unknown>): {
+  listQuery?: Record<string, string>;
+} {
+  const raw = collection['x-list-query'];
+  if (!isRecord(raw)) {
+    return {};
+  }
+  const listQuery: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    listQuery[key] = String(value);
+  }
+  return Object.keys(listQuery).length ? { listQuery } : {};
 }
 
 function itemsFieldOf(collection: Record<string, unknown>): string {
@@ -154,6 +176,7 @@ export function discoverResourceModel(
         idField,
         contextParams: pathVariables(collectionUrl),
         ...idPolicy(document, collectionUrl),
+        ...listQueryOf(col),
         paths: itemUrl ? [collectionUrl, itemUrl] : [collectionUrl],
       });
     }

@@ -32,6 +32,11 @@ actions:
           collections:
             issues:
               urlTemplate: /repos/{owner}/{repo}/issues
+              # GitHub's issues list returns only open issues by default; include
+              # closed ones so a close/reopen can be reflected and a closed copy
+              # stays visible to duplicate detection.
+              x-list-query:
+                state: all
         issueComment:
           schema:
             $ref: '#/components/schemas/issue-comment'
