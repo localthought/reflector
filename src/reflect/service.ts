@@ -12,15 +12,42 @@ import {
 import { FileIdMap } from './id-map.js';
 import { FileKvStore } from './kv-store.js';
 
-/** Splits an `owner/repo` target into the path context the document expects. */
+/**
+ * Extracts `[owner, repo]` from a reflection target: either the documented
+ * "owner/repo" shorthand, or a full repository URL (e.g.
+ * `https://github.com/owner/repo`, optionally with a trailing `/issues`,
+ * `.git`, or `/`) — pasting the browser URL instead of the shorthand is an
+ * easy mistake (localthought/reflector#31), so it's accepted rather than
+ * silently mis-parsed.
+ */
+function parseOwnerRepo(target: string): [string, string] | undefined {
+  if (!target.includes('://')) {
+    const parts = target.split('/');
+    return parts.length === 2 && parts[0] && parts[1]
+      ? [parts[0], parts[1]]
+      : undefined;
+  }
+  try {
+    const parts = new URL(target).pathname.split('/').filter(Boolean);
+    return parts.length >= 2
+      ? [parts[0], parts[1].replace(/\.git$/, '')]
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Splits a reflection target into the path context the document expects. */
 function targetContext(target: string): Record<string, string> {
-  const slash = target.indexOf('/');
-  if (slash <= 0 || slash === target.length - 1) {
+  const parsed = parseOwnerRepo(target);
+  if (!parsed) {
     throw new Error(
-      `Reflection target "${target}" must be in "owner/repo" form.`,
+      `Reflection target "${target}" must be in "owner/repo" form, or a ` +
+        'full repository URL (e.g. "https://github.com/owner/repo").',
     );
   }
-  return { owner: target.slice(0, slash), repo: target.slice(slash + 1) };
+  const [owner, repo] = parsed;
+  return { owner, repo };
 }
 
 async function buildSide(
