@@ -12,7 +12,6 @@ available, rather than losing track of which sessions they are.
 | --- | --- |
 | https://claude.ai/code/session_0199P1WLrDDqii4P6PW2jU1G | pending |
 | https://claude.ai/code/session_01BdadF8jAvK2e8Fmis3hLJF | pending |
-| https://claude.ai/code/session_01GxJ4zZY639wfAdYrxtQZ36 | pending |
 | https://claude.ai/code/session_01LqoV7VRLPDKZVjbNXvpG8r | pending |
 | https://claude.ai/code/session_01RazzYwG43ojdSKy8nxsMNX | pending |
 | https://claude.ai/code/session_01VAiyZeKvpjJEurqtoDmfJn | pending |
