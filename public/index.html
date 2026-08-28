@@ -15,7 +15,7 @@
           <p class="tagline">Local-first sync between your systems of record</p>
         </div>
       </div>
-      <div class="topbar-actions">
+      <div id="topbar-actions" class="topbar-actions">
         <span id="sync-indicator" class="sync-indicator idle" title="Sync status">All changes synced</span>
         <button id="storage-btn" class="btn ghost" title="Choose where your data is stored">Storage: Local files</button>
         <span id="account" class="account"></span>
@@ -24,6 +24,16 @@
     </header>
 
     <main id="main">
+      <!-- Reflection-mode state: an unattended background sync between two
+           systems of record, with no per-user connect flow to show. -->
+      <section id="reflection-view" class="view centered" hidden>
+        <div class="card connect-card">
+          <span class="logo big">🪞</span>
+          <h2>Reflecting in the background</h2>
+          <p id="reflection-summary"></p>
+        </div>
+      </section>
+
       <!-- Disconnected state -->
       <section id="connect-view" class="view centered" hidden>
         <div class="card connect-card">

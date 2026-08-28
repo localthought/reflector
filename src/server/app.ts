@@ -177,6 +177,10 @@ export function createApp(
       account: session?.account ?? null,
       connectedAt: session?.connectedAt ?? null,
       storage: sessions.storageStatus(session),
+      // Reflection-mode deployments run an unattended background sync between
+      // two systems of record with no per-user connect flow; when present the
+      // UI shows that status instead of the interactive Connect screen.
+      reflection: reflection ? reflection.status() : null,
     });
   });
 

@@ -6,6 +6,7 @@ const state = {
   connected: false,
   changeStates: {}, // changeId -> last seen state
   storage: { kind: 'local', label: 'Local files', userAddress: null },
+  reflection: null, // set when this instance runs an unattended background reflection instead
 };
 
 async function api(path, options = {}) {
@@ -35,9 +36,26 @@ function toast(message, kind = '') {
 
 // --- Rendering -------------------------------------------------------------
 
+function reflectionSummary(reflection) {
+  const [a, b] = reflection.systems;
+  const seconds = Math.round(reflection.intervalMs / 1000);
+  const verb =
+    reflection.direction === 'a-to-b'
+      ? `reflects changes from ${a} to ${b}`
+      : `reflects between ${a} and ${b}`;
+  return `This Reflector instance ${verb} every ${seconds} seconds.`;
+}
+
 function render() {
-  el('connect-view').hidden = state.connected;
-  el('app-view').hidden = !state.connected;
+  const reflecting = Boolean(state.reflection);
+  el('topbar-actions').hidden = reflecting;
+  el('reflection-view').hidden = !reflecting;
+  el('connect-view').hidden = reflecting || state.connected;
+  el('app-view').hidden = reflecting || !state.connected;
+  if (reflecting) {
+    el('reflection-summary').textContent = reflectionSummary(state.reflection);
+    return;
+  }
   el('disconnect-btn').hidden = !state.connected;
   el('not-configured').hidden = state.configured;
   el('connect-btn').classList.toggle('disabled', !state.configured);
@@ -47,6 +65,11 @@ function render() {
 
 async function loadMe() {
   const me = await api('/api/me');
+  state.reflection = me.reflection || null;
+  if (state.reflection) {
+    render();
+    return;
+  }
   state.configured = me.configured;
   state.connected = me.connected;
   state.storage = me.storage || state.storage;
