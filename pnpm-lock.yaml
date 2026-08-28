@@ -25,8 +25,8 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
       syncables:
-        specifier: github:localthought/syncables#2f74e57fb5d47461fa220909cbc82aabf371c6aa
-        version: https://codeload.github.com/localthought/syncables/tar.gz/2f74e57fb5d47461fa220909cbc82aabf371c6aa
+        specifier: 0.17.1
+        version: 0.17.1
       tslib:
         specifier: ~2.8
         version: 2.8.1
@@ -1522,9 +1522,8 @@ packages:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
 
-  syncables@https://codeload.github.com/localthought/syncables/tar.gz/2f74e57fb5d47461fa220909cbc82aabf371c6aa:
-    resolution: {tarball: https://codeload.github.com/localthought/syncables/tar.gz/2f74e57fb5d47461fa220909cbc82aabf371c6aa}
-    version: 0.17.1
+  syncables@0.17.1:
+    resolution: {integrity: sha512-VbWBpqYU+XljbXLEXUJByjTrRi0SgMJH4/rnsqRu4vURMWs418nWhAVl9IiaEGD8QWE4viWZVEZ0uWm8F7iAYA==}
     engines: {node: '>= 22.11 < 23'}
 
   test-exclude@7.0.2:
@@ -3118,7 +3117,7 @@ snapshots:
     dependencies:
       has-flag: 4.0.0
 
-  syncables@https://codeload.github.com/localthought/syncables/tar.gz/2f74e57fb5d47461fa220909cbc82aabf371c6aa:
+  syncables@0.17.1:
     dependencies:
       js-yaml: 4.3.1
       tslib: 2.8.1

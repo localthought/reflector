@@ -51,7 +51,7 @@ Scaffolded from
 Requires Node `>= 22.11 < 23`.
 
 ```sh
-npm install          # also builds the `syncables` git dependency (see below)
+npm install          # installs the prebuilt `syncables` dependency from npm
 npm run build
 npm start            # http://localhost:3000
 ```
@@ -115,9 +115,7 @@ copied across, so the two trackers stay in step.
 > ([#23](https://github.com/localthought/reflector/issues/23)–[#29](https://github.com/localthought/reflector/issues/29)),
 > plus the GitHub-shape support in the sync engine
 > ([localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6),
-> released in `syncables` 0.17.1). This app currently pins that `syncables`
-> commit as a git dependency; it can move to the npm release once 0.17.1 is
-> republished there.
+> released in `syncables` 0.17.1 on npm, which this app depends on).
 
 **Each endpoint is derived from its own document + overlays.** A and B do not
 have to share a schema — you can point both at the GitHub Issues document, or at
@@ -418,13 +416,11 @@ sync-status tracking, and rollback on failure.
 
 ### The `syncables` dependency
 
-`syncables` is consumed as a git dependency and ships as TypeScript source with
-no prebuilt output, so `npm install` runs `scripts/postinstall.mjs` to build it
-once. If that step is skipped (e.g. `--ignore-scripts`), build it manually:
-
-```sh
-cd node_modules/syncables && npm install && npm run build:release
-```
+`syncables` is installed from the npm registry (a pinned version) and ships
+prebuilt, so no build step runs on install. `scripts/postinstall.mjs` remains
+only as a fallback that builds it from source if an installed copy ever lacks a
+prebuilt `build/` (e.g. a source checkout); against the published package it is
+a no-op.
 
 ## Generative AI use
 

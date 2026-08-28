@@ -12,7 +12,7 @@
     "js-yaml": "~4.3",
     "jszip": "~3.10",
     "pg": "^8.22.0",
-    "syncables": "github:localthought/syncables#2f74e57fb5d47461fa220909cbc82aabf371c6aa",
+    "syncables": "0.17.1",
     "tslib": "~2.8"
   },
   "devDependencies": {
