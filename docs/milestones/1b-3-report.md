@@ -87,17 +87,14 @@ platform, judged by a mapping-aware oracle) — added across
 
 ## Milestone 1b — bidirectional functionality (syncables)
 
-The devlog issue attributes milestone 1b's "show bidirectional
-functionality" deliverable to the `syncables` repo's README, at
-[localthought/syncables#11](https://github.com/localthought/syncables/issues/11).
-That repo is outside this session's access, so this report does not
-independently re-verify its README claim; what this repo *can* confirm is
-that Reflector consumes `syncables` as a released npm dependency
-(`syncables@0.17.1`, pinned in [`package.json`](../../package.json)) and
-that the bidirectional GitHub-issue reflection above — built on top of
+Reflector consumes `syncables` as a released npm dependency
+(`syncables@0.17.1`, pinned in [`package.json`](../../package.json)). 
+The bidirectional GitHub-issue reflection above was built on top of
 `syncables`' local-first create/update/delete with background retry and
-rollback — works end-to-end against it, in both the live validation and the
+rollback, it works end-to-end against it, in both the live validation and the
 harness's `reflected`/`mismatch`/`timeout`/`looped` scenarios.
+See [syncables readme](https://github.com/localthought/syncables#nlnet-milestone-1)
+for a more detailed description of how the bi-directional version of Syncables works.
 
 ## Supporting repos referenced by the issue
 
