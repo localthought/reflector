@@ -34,7 +34,7 @@ const REAL_PROFILE: AuthProfile = {
   authorizationParams: {},
 };
 
-describe('createApp /auth/login', () => {
+describe('createApp', () => {
   let dir: string;
   let config: ReflectorConfig;
 
@@ -150,6 +150,26 @@ describe('createApp /auth/login', () => {
       const res = await fetch(`${base}/api/me`);
       const body = (await res.json()) as { reflection: unknown };
       expect(body.reflection).toBeNull();
+    } finally {
+      server.close();
+    }
+  });
+
+  // Regression for localthought/reflector#31: a failed reflect pass (e.g. a
+  // misconfigured target producing a 404 against the real API) used to fall
+  // through to Express's generic, message-less "Internal Server Error" HTML
+  // page — indistinguishable from a crash. POST /api/reflect should surface
+  // the actual failure as JSON instead.
+  it('/api/reflect returns the failure as JSON instead of a bare 500 page', async () => {
+    const reflection = {
+      reflectNow: () => Promise.reject(new Error('GitHub API said no')),
+    } as unknown as ReflectionService;
+    const { server, base } = await listen(REAL_PROFILE, reflection);
+    try {
+      const res = await fetch(`${base}/api/reflect`, { method: 'POST' });
+      expect(res.status).toBe(502);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toBe('GitHub API said no');
     } finally {
       server.close();
     }
