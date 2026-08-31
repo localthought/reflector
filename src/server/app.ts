@@ -76,8 +76,17 @@ export function createApp(
     app.post(
       '/api/reflect',
       asyncRoute(async (_req, res) => {
-        const summary = await reflection.reflectNow();
-        res.json(summary);
+        try {
+          const summary = await reflection.reflectNow();
+          res.json(summary);
+        } catch (error) {
+          // reflectNow() already recorded this on `status()` as `lastError`;
+          // surface it here too instead of falling through to Express's
+          // generic, message-less 500 page (localthought/reflector#31).
+          res.status(502).json({
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }),
     );
   }

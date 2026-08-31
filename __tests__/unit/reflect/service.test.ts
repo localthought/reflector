@@ -63,4 +63,34 @@ describe('ReflectionService.fromConfig', () => {
       ReflectionService.fromConfig(loadConfig()),
     ).rejects.toThrow(/owner\/repo/);
   });
+
+  // Regression for localthought/reflector#31: a full repository URL (the
+  // natural thing to paste from a browser address bar) used to be silently
+  // mis-split on its first "/" — "https://github.com/owner/repo" became
+  // { owner: "https:", repo: "/github.com/owner/repo" } — producing a
+  // malformed GitHub API path that 404s deep inside a reflect pass instead of
+  // failing clearly at startup.
+  it('accepts a full repository URL as a reflection target', async () => {
+    enableGithubReflection();
+    process.env.REFLECT_A_REPO = 'https://github.com/octo/a';
+    process.env.REFLECT_B_REPO = 'https://github.com/octo/b/issues';
+
+    const service = await ReflectionService.fromConfig(loadConfig());
+    expect(service).toBeDefined();
+    // `systems` still reports the configured target verbatim (it's the
+    // stable marker/id-map identity); only the derived {owner, repo} path
+    // context is normalized.
+    expect(service!.status().systems).toEqual([
+      'https://github.com/octo/a',
+      'https://github.com/octo/b/issues',
+    ]);
+  });
+
+  it('rejects a URL with no owner/repo path segments', async () => {
+    enableGithubReflection();
+    process.env.REFLECT_A_REPO = 'https://github.com';
+    await expect(
+      ReflectionService.fromConfig(loadConfig()),
+    ).rejects.toThrow(/owner\/repo/);
+  });
 });
