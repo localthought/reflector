@@ -1,12 +1,10 @@
 # Milestone 1b + 3 evidence report
 
-Source: [michielbdejong/devlog#64](https://github.com/michielbdejong/devlog/issues/64)
-("TUBS 1b+3 milestone report"). That issue is a devlog note asserting the
-NLnet MOU deliverables for milestone 1b and milestone 3 are done. This
-document collects the concrete evidence for the claims that fall inside
-this repository (milestone 3, plus what this repo can independently confirm
-about the milestone 1b dependency), gathered on 2026-08-31 against
-`main` (commit `a807916`).
+This report is evidence for two deliverables under the NLnet MOU:
+**milestone 1b** (bidirectional sync functionality, in `syncables`) and
+**milestone 3** (Reflector — reflecting records between two independent
+systems of record). It lays out what was built, how it's tested, and how
+an NLnet reviewer can check it live.
 
 ## Milestone 3 — Reflector: reflecting between two systems of record
 
@@ -49,7 +47,9 @@ GitHub-shape support added to the sync engine itself
 ([localthought/syncables#4](https://github.com/localthought/syncables/issues/4)–[#6](https://github.com/localthought/syncables/issues/6),
 released as `syncables` 0.17.1 on npm).
 
-### Automated test evidence (re-run for this report)
+### Automated test evidence
+
+The test suite currently passes in full:
 
 ```
 $ pnpm test           # __tests__/unit/**, vitest
@@ -106,22 +106,48 @@ for a more detailed description of how the bi-directional version of Syncables w
   vendored OpenAPI documents at startup (see
   [`src/sync/document.ts`](../../src/sync/document.ts) and
   [`src/sync/overlay.ts`](../../src/sync/overlay.ts)).
-- **OpenAPI extensions repo** (pagination + CRUD-causality extension
-  definitions consumed by the overlays above) — referenced by the issue;
-  not independently checked from this session.
+- **[pondersource/openapi-extensions](https://github.com/pondersource/openapi-extensions)** —
+  the pagination scheme and the CRUD-causality extension for declaratively
+  expressing API object operations, consumed by the overlays above.
 
 All of the above, plus this repo, are public and open source.
 
-## How to see it live
+## Checking it live
 
-1. Set the two-endpoint env vars from the README's
-   [GitHub setup](../../README.md#reflecting-between-two-systems-eg-two-github-issue-trackers)
-   example (`OPENAPI_PATH`/`OVERLAY_DIR` pointed at
-   `spec/github-issues.openapi.yaml` / `spec/overlays/github`,
-   `REFLECT_A_REPO`/`REFLECT_A_TOKEN`, `REFLECT_B_REPO`/`REFLECT_B_TOKEN`,
-   `REFLECT_DIRECTION=bidirectional`) against two real GitHub repos.
-2. `pnpm build && pnpm start`.
-3. Create an issue (or comment, or close one) on either repo and either wait
-   for the background loop (`REFLECT_INTERVAL_MS`, default 60s) or trigger a
-   pass on demand with `POST /api/reflect`; check `GET /api/reflect/status`
-   for the loop's state.
+The quickest way to check milestone 3 is against the maintainer's own
+running instance, rather than deploying one yourself:
+
+1. Create, update, close, or comment on an issue in
+   [localthought/test-repo-1](https://github.com/localthought/test-repo-1/issues).
+2. Either wait up to 60 seconds for the background reflect loop, or trigger
+   a pass immediately:
+   ```sh
+   curl -X POST https://reflector-prod-8e1e64ecb238.herokuapp.com/api/reflect
+   ```
+3. Check [localthought/test-repo-2](https://github.com/localthought/test-repo-2/issues)
+   for the mirrored change — and the reverse direction too, since reflection
+   is bidirectional.
+
+Reflector can also be deployed independently against any two GitHub
+repositories: set the two-endpoint env vars from the README's
+[GitHub setup](../../README.md#reflecting-between-two-systems-eg-two-github-issue-trackers)
+example (`OPENAPI_PATH`/`OVERLAY_DIR` pointed at
+`spec/github-issues.openapi.yaml` / `spec/overlays/github`,
+`REFLECT_A_REPO`/`REFLECT_A_TOKEN`, `REFLECT_B_REPO`/`REFLECT_B_TOKEN`,
+`REFLECT_DIRECTION=bidirectional`), then `pnpm build && pnpm start` and
+repeat the same create/update/close/comment check against your own two
+repos, using `POST /api/reflect` and `GET /api/reflect/status` on your own
+instance.
+
+## AI-assisted development disclosure
+
+Per [NLnet's Generative AI policy](https://nlnet.nl/foundation/policies/generativeAI/),
+both repos behind these milestones keep a disclosure log of AI-assisted
+development:
+
+- [localthought/syncables/docs/ai-logs](https://github.com/localthought/syncables/tree/main/docs/ai-logs)
+- [localthought/reflector/docs/ai-logs](https://github.com/localthought/reflector/tree/main/docs/ai-logs)
+
+The maintainer's own work and timekeeping logs for this MOU are kept as
+closed issues in [devlog](https://github.com/michielbdejong/devlog/issues?q=is%3Aissue+state%3Aclosed),
+including [michielbdejong/devlog#36](https://github.com/michielbdejong/devlog/issues/36).
