@@ -1,5 +1,11 @@
 # Reflector
 
+This code is open source and was produced by Michiel de Jong, using Claude as a tool.
+Michiel de Jong has signed off on all the code in this repo line-by-line (except for
+the lockfiles, which were produced by npm and pnpm),and Michiel de Jong is the
+publishing author in terms of copyright.
+This work was [funded by NLNet](https://nlnet.nl/project/TUBS/).
+
 A **local-first** app that syncs your data across multiple **systems of
 record**. Reflector connects to a system of record — today the **Google
 Calendar API** — reads everything it has for your account into a local copy
