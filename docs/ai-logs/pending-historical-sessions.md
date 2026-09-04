@@ -10,7 +10,6 @@ available, rather than losing track of which sessions they are.
 
 | Session | Status |
 | --- | --- |
-| https://claude.ai/code/session_01Nv4Z3Pm7GYm1EdACgzLAis | pending |
 | https://claude.ai/code/session_01VAiyZeKvpjJEurqtoDmfJn | pending |
 | https://claude.ai/code/session_01RazzYwG43ojdSKy8nxsMNX | pending |
 | https://claude.ai/code/session_01XVrYwrKNfbvF4N1ppG3u83 | pending |
